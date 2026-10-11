@@ -73,7 +73,7 @@ export default function InventoryPage() {
     useState<Vehicle | null>(null);
   const [sellStep, setSellStep] = useState<1 | 2>(1);
   const [saleType, setSaleType] =
-    useState<"CUSTOMER" | "AUCTION">("CUSTOMER");
+    useState<"CUSTOMER" | "AUCTION">("AUCTION");
   const [salePrice, setSalePrice] = useState("");
   const [saleDate, setSaleDate] = useState(
     new Date().toISOString().split("T")[0]
