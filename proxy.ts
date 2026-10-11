@@ -10,6 +10,7 @@ const LOGIN_PAGE = "/login";
 const PUBLIC_API_ROUTES = [
   "/api/auth/login",
   "/api/auth/logout",
+  "/api/health",
 ];
 
 async function isAuthenticated(
