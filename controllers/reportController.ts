@@ -6,6 +6,17 @@ import Sale from "@/models/Sale";
 import Payment from "@/models/Payment";
 import VehicleExpense from "@/models/VehicleExpense";
 import GeneralExpense from "@/models/GeneralExpense";
+import { Types } from "mongoose";
+
+type PopulatedVehicle = {
+  _id: Types.ObjectId;
+  name: string;
+  model: string;
+  year: number;
+  chassisNumber: string;
+  registrationNumber?: string;
+  purchasePrice?: number;
+};
 
 type ReportQuery = {
   from?: string;
@@ -89,10 +100,9 @@ export async function getReports(query: ReportQuery) {
     const sales = await Sale.find(
       buildDateFilter("saleDate", startDate, endDate),
     )
-      .populate({
+      .populate<{ vehicleId: PopulatedVehicle | null }>({
         path: "vehicleId",
-        select:
-          "name model year color chassisNumber registrationNumber purchasePrice purchaseDate",
+        select: "name model year color chassisNumber registrationNumber purchasePrice purchaseDate",
       })
       .sort({ saleDate: -1 })
       .lean();
@@ -205,8 +215,8 @@ export async function getReports(query: ReportQuery) {
      */
 
     const soldVehicleIds = sales
-      .map((sale) => sale.vehicleId?._id)
-      .filter(Boolean);
+        .map((sale) => sale.vehicleId?._id)
+        .filter((id): id is Types.ObjectId => id !== undefined);
 
     let allRelevantVehicleExpenses: any[] = [];
 

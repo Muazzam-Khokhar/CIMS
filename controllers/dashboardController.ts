@@ -6,6 +6,17 @@ import Sale from "@/models/Sale";
 import Payment from "@/models/Payment";
 import VehicleExpense from "@/models/VehicleExpense";
 import GeneralExpense from "@/models/GeneralExpense";
+import { Types } from "mongoose";
+
+type PopulatedVehicle = {
+  _id: Types.ObjectId;
+  name: string;
+  model: string;
+  year: number;
+  chassisNumber: string;
+  registrationNumber?: string;
+  purchasePrice?: number;
+};
 
 export async function getDashboard() {
   try {
@@ -37,10 +48,9 @@ export async function getDashboard() {
       .select(
         "vehicleId saleType salePrice saleDate",
       )
-      .populate({
+      .populate<{ vehicleId: PopulatedVehicle | null }>({
         path: "vehicleId",
-        select:
-          "name model year chassisNumber registrationNumber purchasePrice",
+        select: "name model year chassisNumber registrationNumber purchasePrice",
       })
       .sort({ saleDate: -1, createdAt: -1 })
       .lean();

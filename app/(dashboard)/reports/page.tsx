@@ -200,7 +200,19 @@ export default function ReportsPage() {
     loadReport();
   }, [loadReport]);
 
-  const summary = report?.summary;
+  const summary = report?.summary ?? {
+    totalSales: 0,
+    totalPayments: 0,
+    totalOutstanding: 0,
+    totalVehicleExpenses: 0,
+    totalGeneralExpenses: 0,
+    grossVehicleProfit: 0,
+    businessNetProfit: 0,
+    salesCount: 0,
+    paymentCount: 0,
+    vehicleExpenseCount: 0,
+    generalExpenseCount: 0,
+  };
 
   const totalExpenses = useMemo(() => {
     return (
