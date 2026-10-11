@@ -8,7 +8,10 @@ export type AuditAction =
   | "SELL"
   | "PAYMENT_CREATE"
   | "LOGIN"
-  | "LOGOUT";
+  | "LOGOUT"
+  | "RETURN" 
+  | "PAYMENT_UPDATE" 
+  | "PAYMENT_DELETE";
 
 export type AuditEntity =
   | "VEHICLE"
@@ -63,6 +66,9 @@ const auditLogSchema = new Schema<IAuditLog>(
         "PAYMENT_CREATE",
         "LOGIN",
         "LOGOUT",
+        "RETURN", 
+        "PAYMENT_UPDATE",
+        "PAYMENT_DELETE",
       ],
       required: true,
     },

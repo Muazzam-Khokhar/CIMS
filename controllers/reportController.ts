@@ -91,15 +91,20 @@ export async function getReports(query: ReportQuery) {
     }
 
     const { startDate, endDate } = range;
-
+    const refundAgg = await Sale.aggregate([
+      { $match: { status: "RETURNED", ...buildDateFilter("returnDate", startDate, endDate) } },
+      { $group: { _id: null, total: { $sum: "$refundAmount" } } },
+    ]);
+    const totalRefunds: number = refundAgg[0]?.total ?? 0;
     /*
      * ---------------------------------------------------------
      * SALES
      * ---------------------------------------------------------
      */
-    const sales = await Sale.find(
-      buildDateFilter("saleDate", startDate, endDate),
-    )
+    const sales = await Sale.find({
+      status: { $ne: "RETURNED" },
+      ...buildDateFilter("saleDate", startDate, endDate),
+    })
       .populate<{ vehicleId: PopulatedVehicle | null }>({
         path: "vehicleId",
         select: "name model year color chassisNumber registrationNumber purchasePrice purchaseDate",
@@ -301,7 +306,7 @@ export async function getReports(query: ReportQuery) {
 
         summary: {
           totalSales,
-          totalPayments,
+          totalPayments: totalPayments - totalRefunds,
           totalOutstanding,
           totalVehicleExpenses,
           totalGeneralExpenses,
@@ -313,6 +318,7 @@ export async function getReports(query: ReportQuery) {
           paymentCount: payments.length,
           vehicleExpenseCount: vehicleExpenses.length,
           generalExpenseCount: generalExpenses.length,
+          totalRefunds,
         },
 
         sales,

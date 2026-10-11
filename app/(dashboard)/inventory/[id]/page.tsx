@@ -14,9 +14,12 @@ import {
   TrendingUp,
   Wallet,
   Wrench,
+  X,
+  Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/confirm-provider";
+import { ReturnSaleModal } from "@/components/ReturnSaleModal";
 
 type VehicleImage = {
   url: string;
@@ -118,6 +121,17 @@ export default function VehicleViewPage({ params }: Props) {
   const [error, setError] = useState("");
   const [discarding, setDiscarding] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
+  const todayString = () => new Date().toISOString().split("T")[0];
+  const [returnOpen, setReturnOpen] = useState(false);
+
+  const [expenseOpen, setExpenseOpen] = useState(false);
+  const [savingExpense, setSavingExpense] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({
+    title: "",
+    amount: "",
+    expenseDate: todayString(),
+    notes: "",
+  });
 
   const loadVehicle = useCallback(
     async (showSpinner = true) => {
@@ -192,6 +206,70 @@ export default function VehicleViewPage({ params }: Props) {
       );
     } finally {
       setDiscarding(false);
+    }
+  };
+  const openExpenseModal = () => {
+    setExpenseForm({
+      title: "",
+      amount: "",
+      expenseDate: todayString(),
+      notes: "",
+    });
+    setExpenseOpen(true);
+  };
+  
+  const handleAddExpense = async () => {
+    if (!vehicle) return;
+  
+    const amount = Number(expenseForm.amount);
+  
+    if (!expenseForm.title.trim()) {
+      toast.error("Please enter an expense title.");
+      return;
+    }
+  
+    if (!amount || amount <= 0) {
+      toast.error("Please enter a valid expense amount.");
+      return;
+    }
+  
+    if (!expenseForm.expenseDate) {
+      toast.error("Please select the expense date.");
+      return;
+    }
+  
+    try {
+      setSavingExpense(true);
+  
+      const response = await fetch("/api/vehicle-expenses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vehicleId: vehicle._id,
+          title: expenseForm.title.trim(),
+          amount,
+          expenseDate: expenseForm.expenseDate,
+          notes: expenseForm.notes.trim() || undefined,
+        }),
+      });
+  
+      const result = await response.json();
+  
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Failed to add expense");
+      }
+  
+      toast.success("Vehicle expense added successfully.");
+      setExpenseOpen(false);
+      await loadVehicle(false); // refreshes expenses, investment and profit
+    } catch (error) {
+      console.error("Add vehicle expense error:", error);
+  
+      toast.error(
+        error instanceof Error ? error.message : "Failed to add expense"
+      );
+    } finally {
+      setSavingExpense(false);
     }
   };
 
@@ -292,6 +370,25 @@ export default function VehicleViewPage({ params }: Props) {
         </div>
 
         <div className="flex items-center gap-2">
+          {vehicle.status !== "DISCARDED" && (
+            <button
+              type="button"
+              onClick={openExpenseModal}
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+            >
+              <Plus className="h-4 w-4" />
+              Add Expense
+            </button>
+          )}
+          {vehicle.status === "SOLD" && financials?.sale && (
+            <button
+              type="button"
+              onClick={() => setReturnOpen(true)}
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 shadow-sm hover:bg-red-50"
+            >
+              Return Sale
+            </button>
+          )}
           {vehicle.status !== "DISCARDED" && (
             <Link
               href={`/inventory/${vehicle._id}/edit`}
@@ -557,6 +654,127 @@ export default function VehicleViewPage({ params }: Props) {
             {vehicle.notes}
           </p>
         </section>
+      )}
+      {expenseOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Add Vehicle Expense
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {vehicle.name} {vehicle.model} · {vehicle.chassisNumber}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setExpenseOpen(false)}
+                disabled={savingExpense}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-5">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Expense Title
+                </label>
+                <input
+                  type="text"
+                  value={expenseForm.title}
+                  onChange={(e) =>
+                    setExpenseForm((c) => ({ ...c, title: e.target.value }))
+                  }
+                  placeholder="e.g. Oil change, repair, detailing"
+                  className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Amount
+                  </label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={expenseForm.amount}
+                    onChange={(e) =>
+                      setExpenseForm((c) => ({ ...c, amount: e.target.value }))
+                    }
+                    placeholder="0"
+                    className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Expense Date
+                  </label>
+                  <input
+                    type="date"
+                    value={expenseForm.expenseDate}
+                    onChange={(e) =>
+                      setExpenseForm((c) => ({ ...c, expenseDate: e.target.value }))
+                    }
+                    className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Notes
+                  <span className="ml-1 font-normal text-slate-400">(optional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={expenseForm.notes}
+                  onChange={(e) =>
+                    setExpenseForm((c) => ({ ...c, notes: e.target.value }))
+                  }
+                  placeholder="Additional details..."
+                  className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setExpenseOpen(false)}
+                disabled={savingExpense}
+                className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleAddExpense()}
+                disabled={savingExpense}
+                className="h-10 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingExpense ? "Saving..." : "Save Expense"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {financials?.sale && (
+        <ReturnSaleModal
+          open={returnOpen}
+          saleId={financials.sale._id}
+          vehicleLabel={`${vehicle.name} ${vehicle.model} · ${vehicle.chassisNumber}`}
+          totalPaid={financials.sale.totalPaid}
+          onClose={() => setReturnOpen(false)}
+          onSuccess={() => loadVehicle(false)}
+        />
       )}
     </div>
   );

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { createSale, getSales } from "@/controllers/saleController";
+import { createSale, getSales, returnSale } from "@/controllers/saleController";
 import { ALL_ROLES, MANAGER_ROLES, requireRoles } from "@/lib/authorization";
 
 export async function GET(request: NextRequest) {

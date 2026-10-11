@@ -266,7 +266,7 @@ export default function InventoryPage() {
     setSelectedVehicle(vehicle);
   
     setSellStep(1);
-    setSaleType("CUSTOMER");
+    setSaleType("AUCTION");
     setSalePrice("");
     setSaleDate(new Date().toISOString().split("T")[0]);
   
@@ -824,18 +824,6 @@ export default function InventoryPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() => setSaleType("CUSTOMER")}
-                      className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
-                        saleType === "CUSTOMER"
-                          ? "border-sky-500 bg-sky-50 text-sky-700"
-                          : "border-slate-200 text-slate-600 hover:border-slate-300"
-                      }`}
-                    >
-                      Customer
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={() => setSaleType("AUCTION")}
                       className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
                         saleType === "AUCTION"
@@ -844,6 +832,17 @@ export default function InventoryPage() {
                       }`}
                     >
                       Auction
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSaleType("CUSTOMER")}
+                      className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                        saleType === "CUSTOMER"
+                          ? "border-sky-500 bg-sky-50 text-sky-700"
+                          : "border-slate-200 text-slate-600 hover:border-slate-300"
+                      }`}
+                    >
+                      Customer
                     </button>
                   </div>
                 </div>
@@ -897,7 +896,7 @@ export default function InventoryPage() {
                         toast.error("Please select the sold date.");
                         return;
                       }
-
+                      setPaymentDate(saleDate);
                       setSellStep(2);
                     }}
                     className="rounded-xl bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-sky-700"
@@ -968,9 +967,14 @@ export default function InventoryPage() {
                   </div>
                 </div>
 
-                {paymentType === "PARTIAL" && (
-                  <div className="space-y-4 rounded-xl border border-amber-100 bg-amber-50/50 p-4 overflow-y-auto max-h-[250px]">
-
+                <div
+                  className={`max-h-[250px] space-y-4 overflow-y-auto rounded-xl border p-4 ${
+                    paymentType === "FULL"
+                      ? "border-emerald-100 bg-emerald-50/50"
+                      : "border-amber-100 bg-amber-50/50"
+                  }`}
+                >
+                  {paymentType === "PARTIAL" && (
                     <div>
                       <label className="mb-2 block text-sm font-medium text-slate-700">
                         Paid Amount *
@@ -986,77 +990,70 @@ export default function InventoryPage() {
                         className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                       />
                     </div>
+                  )}
 
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">
-                        Payment Date *
-                      </label>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Payment Date *
+                    </label>
 
-                      <input
-                        type="date"
-                        value={paymentDate}
-                        onChange={(e) => setPaymentDate(e.target.value)}
-                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">
-                        Payment Method *
-                      </label>
-
-                      <select
-                        value={paymentMethod}
-                        onChange={(e) =>
-                          setPaymentMethod(
-                            e.target.value as
-                              | "CASH"
-                              | "BANK"
-                              | "ONLINE"
-                              | "OTHER"
-                          )
-                        }
-                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-                      >
-                        <option value="CASH">Cash</option>
-                        <option value="BANK">Bank</option>
-                        <option value="ONLINE">Online</option>
-                        <option value="OTHER">Other</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">
-                        Notes
-                      </label>
-
-                      <textarea
-                        rows={3}
-                        value={paymentNotes}
-                        onChange={(e) => setPaymentNotes(e.target.value)}
-                        placeholder="Optional notes"
-                        className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-                      />
-                    </div>
-
-                    {paymentAmount && (
-                      <div className="flex justify-between border-t border-amber-200 pt-3 text-sm">
-                        <span className="text-slate-600">
-                          Remaining
-                        </span>
-
-                        <span className="font-bold text-slate-900">
-                          Rs.{" "}
-                          {Math.max(
-                            0,
-                            Number(salePrice) -
-                              Number(paymentAmount)
-                          ).toLocaleString("en-PK")}
-                        </span>
-                      </div>
-                    )}
+                    <input
+                      type="date"
+                      value={paymentDate}
+                      onChange={(e) => setPaymentDate(e.target.value)}
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                    />
                   </div>
-                )}
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Payment Method *
+                    </label>
+
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) =>
+                        setPaymentMethod(
+                          e.target.value as "CASH" | "BANK" | "ONLINE" | "OTHER"
+                        )
+                      }
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                    >
+                      <option value="CASH">Cash</option>
+                      <option value="BANK">Bank</option>
+                      <option value="ONLINE">Online</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Notes
+                    </label>
+
+                    <textarea
+                      rows={3}
+                      value={paymentNotes}
+                      onChange={(e) => setPaymentNotes(e.target.value)}
+                      placeholder="Optional notes"
+                      className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                    />
+                  </div>
+
+                  {paymentType === "PARTIAL" && paymentAmount && (
+                    <div className="flex justify-between border-t border-amber-200 pt-3 text-sm">
+                      <span className="text-slate-600">Remaining</span>
+
+                      <span className="font-bold text-slate-900">
+                        Rs.{" "}
+                        {Math.max(
+                          0,
+                          Number(salePrice) - Number(paymentAmount)
+                        ).toLocaleString("en-PK")}
+                      </span>
+                    </div>
+                  )}
+                </div>
 
                 <div className="flex items-center justify-between border-t border-slate-100 pt-5">
                   <button

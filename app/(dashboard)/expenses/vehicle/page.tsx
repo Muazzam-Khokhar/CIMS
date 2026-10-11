@@ -274,7 +274,7 @@ export default function VehicleExpensesPage() {
         );
       }
 
-      toast.error(
+      toast.success(
         editingExpense
           ? "Vehicle expense updated successfully."
           : "Vehicle expense added successfully."

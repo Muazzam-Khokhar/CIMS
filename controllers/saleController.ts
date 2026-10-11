@@ -17,6 +17,7 @@ export async function createSale(data: {
   saleType: "CUSTOMER" | "AUCTION";
   salePrice: number;
   saleDate: string;
+  status:String;
 
   initialPayment?: {
     amount: number;
@@ -100,9 +101,8 @@ export async function createSale(data: {
         );
       }
 
-      const existingSale = await Sale.findOne({
-        vehicleId: data.vehicleId,
-      }).session(session);
+      const existingSale = await Sale.findOne({ vehicleId: data.vehicleId, status: "ACTIVE" })
+                            .session(session);
 
       if (existingSale) {
         throw new Error(
@@ -326,6 +326,9 @@ export async function getSales(searchParams: URLSearchParams) {
     if (requestedType === "CUSTOMER" || requestedType === "AUCTION") {
       filter.saleType = requestedType;
     }
+    const requestedStatus = searchParams.get("status") || "ACTIVE";
+    if (requestedStatus === "RETURNED") filter.status = "RETURNED";
+    else if (requestedStatus === "ACTIVE") filter.status = { $ne: "RETURNED" };
 
     // Search vehicle fields, then filter sales by matching vehicle IDs.
     if (search) {
@@ -419,13 +422,14 @@ export async function getSales(searchParams: URLSearchParams) {
 
     const data = sales.map((sale) => {
       const totalPaid = paymentMap.get(sale._id.toString()) || 0;
-      const remaining = Math.max(sale.salePrice - totalPaid, 0);
-
+      const isReturned = sale.status === "RETURNED";
+      const remaining = isReturned ? 0 : Math.max(sale.salePrice - totalPaid, 0);
+      
       return {
         ...sale,
         totalPaid,
         remaining,
-        paymentStatus: remaining === 0 ? "PAID" : "PARTIAL",
+        paymentStatus: isReturned ? "RETURNED" : remaining === 0 ? "PAID" : "PARTIAL",
       };
     });
 
@@ -455,5 +459,88 @@ export async function getSales(searchParams: URLSearchParams) {
       { success: false, message: "Failed to fetch sales" },
       { status: 500 },
     );
+  }
+}
+export async function returnSale(
+  saleId: string,
+  data: { returnDate: string; refundAmount: number; reason?: string },
+  actor: AuditActor,
+) {
+  await connectDB();
+  const session = await mongoose.startSession();
+
+  try {
+    if (!mongoose.isValidObjectId(saleId)) {
+      return NextResponse.json({ success: false, message: "Invalid sale ID" }, { status: 400 });
+    }
+
+    const returnDate = new Date(data.returnDate);
+    if (Number.isNaN(returnDate.getTime())) {
+      return NextResponse.json({ success: false, message: "Invalid return date" }, { status: 400 });
+    }
+
+    if (!Number.isFinite(data.refundAmount) || data.refundAmount < 0) {
+      return NextResponse.json({ success: false, message: "Invalid refund amount" }, { status: 400 });
+    }
+
+    await session.withTransaction(async () => {
+      const sale = await Sale.findById(saleId).session(session);
+      if (!sale) throw new Error("Sale not found");
+      if (sale.status === "RETURNED") throw new Error("This sale is already returned");
+
+      const paid = await Payment.aggregate([
+        { $match: { saleId: sale._id } },
+        { $group: { _id: null, total: { $sum: "$amount" } } },
+      ]).session(session);
+      const totalPaid: number = paid[0]?.total ?? 0;
+
+      if (data.refundAmount > totalPaid) throw new Error("Refund cannot exceed amount received");
+
+      const vehicle = await Vehicle.findById(sale.vehicleId).session(session);
+      if (!vehicle) throw new Error("Vehicle not found");
+
+      sale.status = "RETURNED";
+      sale.returnDate = returnDate;
+      sale.refundAmount = data.refundAmount;
+      sale.returnReason = data.reason?.trim() || undefined;
+      await sale.save({ session });
+
+      vehicle.status = "AVAILABLE";
+      await vehicle.save({ session });
+
+      await createAuditLog({
+        actor,
+        action: "RETURN",
+        entity: "SALE",
+        entityId: sale._id.toString(),
+        description: `Sale returned, Rs. ${data.refundAmount} refunded of Rs. ${totalPaid} received`,
+        after: {
+          status: "RETURNED",
+          refundAmount: data.refundAmount,
+          returnDate: data.returnDate,
+          reason: data.reason,
+        },
+        session,
+      });
+    });
+
+    return NextResponse.json({ success: true, message: "Sale returned. Vehicle is available again." });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const known = [
+      "Sale not found",
+      "This sale is already returned",
+      "Vehicle not found",
+      "Refund cannot exceed amount received",
+    ];
+
+    if (known.includes(message)) {
+      return NextResponse.json({ success: false, message }, { status: 400 });
+    }
+
+    console.error("Return sale error:", error);
+    return NextResponse.json({ success: false, message: "Failed to return sale" }, { status: 500 });
+  } finally {
+    await session.endSession();
   }
 }

@@ -44,7 +44,7 @@ export async function getDashboard() {
      * SALES
      * ---------------------------------------------------------
      */
-    const sales = await Sale.find()
+    const sales = await Sale.find({ status: { $ne: "RETURNED" }})
       .select(
         "vehicleId saleType salePrice saleDate",
       )
@@ -54,7 +54,11 @@ export async function getDashboard() {
       })
       .sort({ saleDate: -1, createdAt: -1 })
       .lean();
-
+    const refundAgg = await Sale.aggregate([
+        { $match: { status: "RETURNED" } },
+        { $group: { _id: null, total: { $sum: "$refundAmount" } } },
+      ]);
+    const totalRefunds: number = refundAgg[0]?.total ?? 0;
     /*
      * ---------------------------------------------------------
      * PAYMENTS
@@ -297,7 +301,7 @@ export async function getDashboard() {
           discardedVehicles,
 
           totalSales,
-          totalReceived: allPaymentsTotal,
+          totalReceived: allPaymentsTotal - totalRefunds,
           totalOutstanding,
 
           totalVehicleExpenses,

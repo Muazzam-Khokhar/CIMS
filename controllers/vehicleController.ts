@@ -198,7 +198,7 @@ export async function getVehicle(id: string) {
         },
       ]),
  
-      Sale.findOne({ vehicleId }).lean(),
+      Sale.findOne({ vehicleId, status: "ACTIVE" }).lean(),
     ]);
  
     if (!vehicle) {
