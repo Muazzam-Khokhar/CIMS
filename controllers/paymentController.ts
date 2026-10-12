@@ -210,7 +210,7 @@ export async function getPayments(searchParams: URLSearchParams) {
     if (saleIdParam && mongoose.isValidObjectId(saleIdParam)) {
       filter.saleId = new mongoose.Types.ObjectId(saleIdParam);
     }
-    
+
     if (method !== "ALL") {
       filter.paymentMethod = method;
     }
