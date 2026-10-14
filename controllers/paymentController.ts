@@ -281,7 +281,7 @@ export async function getPayments(searchParams: URLSearchParams) {
     console.error("Get payments error:", error);
 
     return NextResponse.json(
-      { success: false, message: "Failed to fetch payments" },
+      { success: false, message: "Failed to fetch payments",error },
       { status: 500 },
     );
   }

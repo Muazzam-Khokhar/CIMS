@@ -337,6 +337,7 @@ export async function getReports(query: ReportQuery) {
       {
         success: false,
         message: "Failed to generate reports",
+        error
       },
       { status: 500 },
     );
