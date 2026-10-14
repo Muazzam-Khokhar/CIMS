@@ -198,7 +198,7 @@ export default function InventoryPage() {
       return "—";
     }
 
-    return `Rs. ${price.toLocaleString("en-PK")}`;
+    return `¥. ${price.toLocaleString("en-JP")}`;
   };
   const formatDate = (date?: string) => {
     if(date === undefined || date === null){
@@ -893,7 +893,7 @@ export default function InventoryPage() {
                     </span>
 
                     <span className="font-semibold text-slate-900">
-                    ¥. {Number(salePrice).toLocaleString("en-PK")}
+                    ¥. {Number(salePrice).toLocaleString("en-JP")}
                     </span>
                   </div>
                 </div>
@@ -1008,11 +1008,11 @@ export default function InventoryPage() {
                       <span className="text-slate-600">Remaining</span>
 
                       <span className="font-bold text-slate-900">
-                        Rs.{" "}
+                      ¥.{" "}
                         {Math.max(
                           0,
                           Number(salePrice) - Number(paymentAmount)
-                        ).toLocaleString("en-PK")}
+                        ).toLocaleString("en-JP")}
                       </span>
                     </div>
                   )}

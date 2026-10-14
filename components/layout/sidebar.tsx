@@ -17,7 +17,14 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const SettingsIcon = settingsItem.icon;
-  const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
+  const [expandedMenu, setExpandedMenu] = useState<string | null>(
+    () =>
+      navigation.find((item) =>
+        item.children?.some((child) =>
+          isNavActive(pathname, child.href, child.exact),
+        ),
+      )?.href ?? null,
+  );
 
   return (
     <>
@@ -83,10 +90,10 @@ export function Sidebar({
             const isExpanded = expandedMenu === item.href;
 
             const active =
-              isNavActive(pathname, item.href) ||
+              isNavActive(pathname, item.href, item.exact) ||
               Boolean(
                 item.children?.some((child) =>
-                  isNavActive(pathname, child.href),
+                  isNavActive(pathname, child.href, child.exact),
                 ),
               );
 
@@ -163,10 +170,7 @@ export function Sidebar({
                 {hasChildren && isExpanded && (
                   <div className="mt-1 hidden space-y-1 pl-11 group-hover/sidebar:block">
                     {item.children!.map((child) => {
-                      const childActive = isNavActive(
-                        pathname,
-                        child.href,
-                      );
+                      const childActive = isNavActive(pathname, child.href, child.exact);
 
                       return (
                         <Link

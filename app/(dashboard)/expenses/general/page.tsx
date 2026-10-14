@@ -38,15 +38,15 @@ const emptyForm: FormData = {
 };
 
 function formatPrice(value: number) {
-  return new Intl.NumberFormat("en-PK", {
+  return new Intl.NumberFormat("en-JP", {
     style: "currency",
-    currency: "PKR",
+    currency: "JPY",
     maximumFractionDigits: 0,
   }).format(value);
 }
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("en-PK", {
+  return new Date(value).toLocaleDateString("en-JP", {
     day: "2-digit",
     month: "short",
     year: "numeric",

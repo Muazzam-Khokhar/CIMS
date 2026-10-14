@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
-  Clock,
   Eye,
   Pencil,
   Plus,
@@ -14,23 +13,20 @@ import {
   Wallet,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
+import { useConfirm } from "@/components/confirm-provider";
+import { formatDate, formatMoney } from "@/lib/format";
 
-type LoanDirection = "BUSINESS_BORROWED" | "PARTNER_ADVANCE";
-type CounterpartyType = "PARTNER" | "BANK" | "INDIVIDUAL" | "OTHER";
-type PaymentMethod = "CASH" | "BANK" | "ONLINE" | "OTHER";
+type Direction = "BUSINESS_BORROWED" | "PARTNER_ADVANCE";
 
-type Partner = {
-  _id: string;
-  name: string;
-  phone?: string;
-};
+type Partner = { _id: string; name: string; phone?: string };
 
 type Loan = {
   _id: string;
-  direction: LoanDirection;
-  counterpartyType: CounterpartyType;
+  direction: Direction;
+  counterpartyType: string;
   counterpartyName: string;
-  partnerId?: string | Partner | null;
+  partnerId?: string | { _id: string } | null;
   principalAmount: number;
   totalRepaid: number;
   outstandingPrincipal: number;
@@ -40,148 +36,103 @@ type Loan = {
   status: "ACTIVE" | "SETTLED" | "VOIDED";
 };
 
-type FinanceTransaction = {
+type Tx = {
   _id: string;
   type: string;
   amount: number;
   transactionDate: string;
-  paymentMethod: PaymentMethod;
+  paymentMethod: string;
   reference?: string;
-  notes?: string;
   status: "VALID" | "VOIDED";
 };
 
 type LoanForm = {
-  direction: LoanDirection;
-  counterpartyType: CounterpartyType;
+  direction: Direction;
   partnerId: string;
-  counterpartyName: string;
-  principalAmount: string;
+  lenderName: string;
+  amount: string;
   loanDate: string;
   dueDate: string;
-  paymentMethod: PaymentMethod;
-  reference: string;
+  method: string;
   notes: string;
 };
 
-type RepaymentForm = {
+type PayForm = {
   amount: string;
-  transactionDate: string;
-  paymentMethod: PaymentMethod;
-  reference: string;
+  date: string;
+  method: string;
   notes: string;
 };
 
 const LIMIT = 10;
 
-const paymentMethods: PaymentMethod[] = [
-  "CASH",
-  "BANK",
-  "ONLINE",
-  "OTHER",
-];
+const METHODS = [
+  ["CASH", "Cash"],
+  ["BANK", "Bank transfer"],
+  ["ONLINE", "Online / mobile app"],
+  ["OTHER", "Other"],
+] as const;
 
-function localDateInput() {
-  const date = new Date();
+const methodLabel = (m: string) =>
+  METHODS.find((x) => x[0] === m)?.[1] ?? m;
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+function todayStr() {
+  const d = new Date();
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
-function dateForInput(value?: string | null) {
-  if (!value) return "";
+const dayOnly = (v?: string | null) => (v ? v.slice(0, 10) : "");
 
-  // API date fields are ISO strings; preserve their original day.
-  if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
-    return value.slice(0, 10);
-  }
+const emptyLoanForm = (): LoanForm => ({
+  direction: "BUSINESS_BORROWED",
+  partnerId: "",
+  lenderName: "",
+  amount: "",
+  loanDate: todayStr(),
+  dueDate: "",
+  method: "CASH",
+  notes: "",
+});
 
-  return "";
-}
+const emptyPayForm = (): PayForm => ({
+  amount: "",
+  date: todayStr(),
+  method: "CASH",
+  notes: "",
+});
 
-function formatPrice(value: number) {
-    return new Intl.NumberFormat("en-JP", {
-      style: "currency",
-      currency: "JPY",
-      maximumFractionDigits: 0,
-    }).format(value || 0);
-}
+const isBorrowed = (l: Loan) => l.direction === "BUSINESS_BORROWED";
 
-function formatDate(value?: string | null) {
-  if (!value) return "—";
+const kindLabel = (d: Direction) =>
+  d === "BUSINESS_BORROWED" ? "We borrowed" : "We lent to partner";
 
-  const date = new Date(value);
+const statusInfo = (s: Loan["status"]) =>
+  s === "SETTLED"
+    ? { label: "Fully paid", cls: "bg-emerald-50 text-emerald-700" }
+    : s === "VOIDED"
+      ? { label: "Cancelled", cls: "bg-red-50 text-red-700" }
+      : { label: "Not fully paid", cls: "bg-amber-50 text-amber-700" };
 
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return date.toLocaleDateString("en-PK", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function emptyLoanForm(): LoanForm {
-  return {
-    direction: "BUSINESS_BORROWED",
-    counterpartyType: "INDIVIDUAL",
-    partnerId: "",
-    counterpartyName: "",
-    principalAmount: "",
-    loanDate: localDateInput(),
-    dueDate: "",
-    paymentMethod: "CASH",
-    reference: "",
-    notes: "",
+function txLabel(type: string) {
+  const map: Record<string, string> = {
+    LOAN_RECEIVED: "Money we received",
+    LOAN_PRINCIPAL_REPAYMENT: "We paid back",
+    PARTNER_ADVANCE_GIVEN: "Money we lent",
+    PARTNER_ADVANCE_REPAID: "Partner paid back",
   };
-}
-
-function emptyRepaymentForm(): RepaymentForm {
-  return {
-    amount: "",
-    transactionDate: localDateInput(),
-    paymentMethod: "CASH",
-    reference: "",
-    notes: "",
-  };
-}
-
-function statusClasses(status: Loan["status"]) {
-  switch (status) {
-    case "SETTLED":
-      return "bg-emerald-50 text-emerald-700";
-
-    case "VOIDED":
-      return "bg-red-50 text-red-700";
-
-    default:
-      return "bg-amber-50 text-amber-700";
-  }
-}
-
-function directionLabel(direction: LoanDirection) {
-  return direction === "BUSINESS_BORROWED"
-    ? "Money Borrowed"
-    : "Partner Advance";
-}
-
-function transactionLabel(type: string) {
-  const labels: Record<string, string> = {
-    LOAN_RECEIVED: "Loan Received",
-    LOAN_PRINCIPAL_REPAYMENT: "Principal Repaid",
-    PARTNER_ADVANCE_GIVEN: "Partner Advance Given",
-    PARTNER_ADVANCE_REPAID: "Advance Repaid",
-  };
-
-  return labels[type] || type.replaceAll("_", " ");
+  return map[type] ?? type;
 }
 
 export default function LoansPage() {
+  const confirm = useConfirm();
+
   const [loans, setLoans] = useState<Loan[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
+  const [totals, setTotals] = useState<{ youOwe: number; partnersOwe: number } | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -192,435 +143,313 @@ export default function LoansPage() {
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [directionFilter, setDirectionFilter] = useState("ALL");
+  const [kindFilter, setKindFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
 
-  const [error, setError] = useState("");
-
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
-  const [loanForm, setLoanForm] = useState<LoanForm>(
-    emptyLoanForm(),
-  );
+  const [editing, setEditing] = useState<Loan | null>(null);
+  const [form, setForm] = useState<LoanForm>(emptyLoanForm());
 
-  const [repaymentOpen, setRepaymentOpen] = useState(false);
-  const [repaymentLoan, setRepaymentLoan] = useState<Loan | null>(null);
-  const [repaymentForm, setRepaymentForm] = useState<RepaymentForm>(
-    emptyRepaymentForm(),
-  );
+  const [payLoan, setPayLoan] = useState<Loan | null>(null);
+  const [payForm, setPayForm] = useState<PayForm>(emptyPayForm());
 
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoan, setHistoryLoan] = useState<Loan | null>(null);
-  const [history, setHistory] = useState<FinanceTransaction[]>([]);
+  const [history, setHistory] = useState<Tx[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / LIMIT));
 
   const loadPartners = useCallback(async () => {
     try {
-      const params = new URLSearchParams({
-        page: "1",
-        limit: "100",
-      });
-
-      const response = await fetch(`/api/partners?${params}`, {
+      const res = await fetch("/api/partners?page=1&limit=100", {
         cache: "no-store",
       });
+      const json = await res.json();
+      if (res.ok && json.success) setPartners(json.data || []);
+    } catch {
+      /* optional */
+    }
+  }, []);
 
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Failed to load partners.");
+  const loadTotals = useCallback(async () => {
+    try {
+      const res = await fetch("/api/finance/overview", { cache: "no-store" });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setTotals({
+          youOwe: json.data.youOwe,
+          partnersOwe: json.data.partnersOweLoans,
+        });
       }
-
-      setPartners(result.data || []);
-    } catch (err) {
-      console.error("Load partners error:", err);
+    } catch {
+      /* cards stay empty */
     }
   }, []);
 
   const loadLoans = useCallback(async () => {
     try {
       setLoading(true);
-      setError("");
 
       const params = new URLSearchParams({
         page: String(page),
         limit: String(LIMIT),
       });
-
       if (search) params.set("search", search);
+      if (kindFilter !== "ALL") params.set("direction", kindFilter);
+      if (statusFilter !== "ALL") params.set("status", statusFilter);
 
-      if (directionFilter !== "ALL") {
-        params.set("direction", directionFilter);
-      }
+      const res = await fetch(`/api/loans?${params}`, { cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message);
 
-      if (statusFilter !== "ALL") {
-        params.set("status", statusFilter);
-      }
+      const rows: Loan[] = json.data || [];
+      const count = Number(json.totalCount || 0);
 
-      const response = await fetch(`/api/loans?${params}`, {
-        cache: "no-store",
-      });
-
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Failed to load loans.");
-      }
-
-      const loaded: Loan[] = result.data || [];
-      const count = Number(result.totalCount || 0);
-
-      // Recover if the last record on this page was deleted.
-      if (loaded.length === 0 && page > 1 && count <= (page - 1) * LIMIT) {
+      if (rows.length === 0 && page > 1 && count <= (page - 1) * LIMIT) {
         setPage(Math.max(1, Math.ceil(count / LIMIT)));
         return;
       }
 
-      setLoans(loaded);
+      setLoans(rows);
       setTotalCount(count);
-      setHasMore(Boolean(result.hasMore));
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load loans.",
-      );
+      setHasMore(Boolean(json.hasMore));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not load loans");
     } finally {
       setLoading(false);
     }
-  }, [page, search, directionFilter, statusFilter]);
+  }, [page, search, kindFilter, statusFilter]);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([loadLoans(), loadTotals()]);
+  }, [loadLoans, loadTotals]);
 
   useEffect(() => {
     void loadLoans();
   }, [loadLoans]);
 
   useEffect(() => {
+    void loadTotals();
     void loadPartners();
-  }, [loadPartners]);
+  }, [loadTotals, loadPartners]);
 
-  function updateLoanField<K extends keyof LoanForm>(
-    field: K,
-    value: LoanForm[K],
-  ) {
-    setLoanForm((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
+  const setF = (patch: Partial<LoanForm>) =>
+    setForm((f) => ({ ...f, ...patch }));
 
-  function openCreateModal() {
-    setEditingLoan(null);
-    setLoanForm(emptyLoanForm());
+  /* ---------------------------- add / edit ---------------------------- */
+
+  const openCreate = () => {
+    setEditing(null);
+    setForm(emptyLoanForm());
     setModalOpen(true);
-  }
+  };
 
-  function openEditModal(loan: Loan) {
-    setEditingLoan(loan);
-
-    setLoanForm({
+  const openEdit = (loan: Loan) => {
+    setEditing(loan);
+    setForm({
       ...emptyLoanForm(),
       direction: loan.direction,
-      counterpartyType: loan.counterpartyType,
-      partnerId:
-        typeof loan.partnerId === "string"
-          ? loan.partnerId
-          : loan.partnerId?._id || "",
-      counterpartyName: loan.counterpartyName || "",
-      principalAmount: String(loan.principalAmount),
-      loanDate: dateForInput(loan.loanDate),
-      dueDate: dateForInput(loan.dueDate),
+      lenderName: loan.counterpartyName,
+      amount: String(loan.principalAmount),
+      loanDate: dayOnly(loan.loanDate),
+      dueDate: dayOnly(loan.dueDate),
       notes: loan.notes || "",
     });
-
     setModalOpen(true);
-  }
+  };
 
-  function closeLoanModal() {
+  const closeModal = () => {
     if (saving) return;
-
     setModalOpen(false);
-    setEditingLoan(null);
-    setLoanForm(emptyLoanForm());
-  }
+    setEditing(null);
+  };
 
-  async function handleSaveLoan() {
-    const amount = Number(loanForm.principalAmount);
-
-    if (
-      !Number.isFinite(amount) ||
-      amount <= 0
-    ) {
-      window.alert("Enter a valid loan amount greater than zero.");
-      return;
-    }
-
-    if (!loanForm.loanDate) {
-      window.alert("Select the loan date.");
-      return;
-    }
-
-    if (!editingLoan && !loanForm.counterpartyType) {
-      window.alert("Select who provided or received the money.");
-      return;
-    }
-
-    if (
-      loanForm.direction === "PARTNER_ADVANCE" &&
-      !loanForm.partnerId
-    ) {
-      window.alert("Select the partner receiving this advance.");
-      return;
-    }
-
-    if (
-      loanForm.counterpartyType === "PARTNER" &&
-      !loanForm.partnerId
-    ) {
-      window.alert("Select the registered partner.");
-      return;
-    }
-
-    if (
-      !editingLoan &&
-      loanForm.counterpartyType !== "PARTNER" &&
-      !loanForm.counterpartyName.trim()
-    ) {
-      window.alert("Enter the lender's name.");
-      return;
-    }
-
-    if (
-      loanForm.dueDate &&
-      loanForm.dueDate < loanForm.loanDate
-    ) {
-      window.alert("Due date cannot be before the loan date.");
-      return;
-    }
-
-    const selectedPartner = partners.find(
-      (partner) => partner._id === loanForm.partnerId,
-    );
-
-    try {
-      setSaving(true);
-
-      const payload: Record<string, unknown> = editingLoan
-        ? {
-            notes: loanForm.notes,
-            dueDate: loanForm.dueDate || null,
-            counterpartyName: loanForm.counterpartyName,
-            principalAmount: amount,
-            loanDate: loanForm.loanDate,
-            paymentMethod: loanForm.paymentMethod,
-            reference: loanForm.reference,
-          }
-        : {
-            direction: loanForm.direction,
-            counterpartyType: loanForm.counterpartyType,
-            counterpartyName:
-              loanForm.counterpartyType === "PARTNER"
-                ? selectedPartner?.name || ""
-                : loanForm.counterpartyName.trim(),
-            partnerId:
-              loanForm.counterpartyType === "PARTNER"
-                ? loanForm.partnerId
-                : undefined,
-            principalAmount: amount,
-            loanDate: loanForm.loanDate,
-            dueDate: loanForm.dueDate || null,
-            paymentMethod: loanForm.paymentMethod,
-            reference: loanForm.reference,
-            notes: loanForm.notes,
-          };
-
-      const response = await fetch(
-        editingLoan
-          ? `/api/loans/${editingLoan._id}`
-          : "/api/loans",
-        {
-          method: editingLoan ? "PATCH" : "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        },
-      );
-
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Failed to save loan.");
-      }
-
-      setModalOpen(false);
-      setEditingLoan(null);
-      setLoanForm(emptyLoanForm());
-
-      window.alert(
-        editingLoan
-          ? "Loan updated successfully."
-          : "Loan recorded successfully.",
-      );
-
-      await loadLoans();
-    } catch (err) {
-      window.alert(
-        err instanceof Error ? err.message : "Failed to save loan.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function openRepaymentModal(loan: Loan) {
-    setRepaymentLoan(loan);
-    setRepaymentForm(emptyRepaymentForm());
-    setRepaymentOpen(true);
-  }
-
-  async function handleSaveRepayment() {
-    if (!repaymentLoan) return;
-
-    const amount = Number(repaymentForm.amount);
+  async function handleSave() {
+    const amount = Number(form.amount);
 
     if (!Number.isFinite(amount) || amount <= 0) {
-      window.alert("Enter a valid repayment amount.");
+      toast.error("Please enter the amount.");
+      return;
+    }
+    if (!form.loanDate) {
+      toast.error("Please choose the date.");
+      return;
+    }
+    if (form.dueDate && form.dueDate < form.loanDate) {
+      toast.error("The pay-back date cannot be before the loan date.");
       return;
     }
 
-    if (amount > repaymentLoan.outstandingPrincipal + 0.005) {
-      window.alert(
-        `Repayment cannot exceed ${formatPrice(
-          repaymentLoan.outstandingPrincipal,
-        )}.`,
+    if (!editing) {
+      if (form.direction === "PARTNER_ADVANCE" && !form.partnerId) {
+        toast.error("Please choose the partner.");
+        return;
+      }
+      if (
+        form.direction === "BUSINESS_BORROWED" &&
+        !form.partnerId &&
+        !form.lenderName.trim()
+      ) {
+        toast.error("Please enter who lent you the money.");
+        return;
+      }
+    }
+
+    try {
+      setSaving(true);
+
+      let body: Record<string, unknown>;
+
+      if (editing) {
+        body = {
+          principalAmount: amount,
+          loanDate: form.loanDate,
+          dueDate: form.dueDate || null,
+          notes: form.notes.trim(),
+        };
+        // Partner loans take their name from the partner record
+        if (editing.counterpartyType !== "PARTNER") {
+          body.counterpartyName = form.lenderName.trim();
+        }
+      } else {
+        const partner = partners.find((p) => p._id === form.partnerId);
+        const isPartner = Boolean(form.partnerId);
+
+        body = {
+          direction: form.direction,
+          counterpartyType: isPartner ? "PARTNER" : "INDIVIDUAL",
+          counterpartyName: isPartner
+            ? partner?.name || ""
+            : form.lenderName.trim(),
+          partnerId: isPartner ? form.partnerId : undefined,
+          principalAmount: amount,
+          loanDate: form.loanDate,
+          dueDate: form.dueDate || null,
+          paymentMethod: form.method,
+          notes: form.notes.trim(),
+        };
+      }
+
+      const res = await fetch(
+        editing ? `/api/loans/${editing._id}` : "/api/loans",
+        {
+          method: editing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message);
+
+      toast.success(editing ? "Loan updated." : "Loan saved.");
+      setModalOpen(false);
+      setEditing(null);
+      await refreshAll();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save loan");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /* ----------------------------- payments ----------------------------- */
+
+  async function handlePay() {
+    if (!payLoan) return;
+
+    const amount = Number(payForm.amount);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Please enter the amount.");
+      return;
+    }
+    if (amount > payLoan.outstandingPrincipal + 0.005) {
+      toast.error(
+        `The amount cannot be more than ${formatMoney(payLoan.outstandingPrincipal)}.`,
       );
       return;
     }
-
-    if (!repaymentForm.transactionDate) {
-      window.alert("Select the repayment date.");
+    if (!payForm.date) {
+      toast.error("Please choose the date.");
       return;
     }
 
     try {
       setSaving(true);
 
-      const type =
-        repaymentLoan.direction === "BUSINESS_BORROWED"
-          ? "LOAN_PRINCIPAL_REPAYMENT"
-          : "PARTNER_ADVANCE_REPAID";
-
-      const response = await fetch("/api/finance-transactions", {
+      const res = await fetch("/api/finance-transactions", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type,
-          loanId: repaymentLoan._id,
+          type: isBorrowed(payLoan)
+            ? "LOAN_PRINCIPAL_REPAYMENT"
+            : "PARTNER_ADVANCE_REPAID",
+          loanId: payLoan._id,
           amount,
-          transactionDate: repaymentForm.transactionDate,
-          paymentMethod: repaymentForm.paymentMethod,
-          reference: repaymentForm.reference,
-          notes: repaymentForm.notes,
+          transactionDate: payForm.date,
+          paymentMethod: payForm.method,
+          notes: payForm.notes.trim(),
         }),
       });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message);
 
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Failed to record repayment.");
-      }
-
-      setRepaymentOpen(false);
-      setRepaymentLoan(null);
-      setRepaymentForm(emptyRepaymentForm());
-
-      window.alert("Repayment recorded successfully.");
-
-      await loadLoans();
-    } catch (err) {
-      window.alert(
-        err instanceof Error
-          ? err.message
-          : "Failed to record repayment.",
-      );
+      toast.success("Payment saved.");
+      setPayLoan(null);
+      await refreshAll();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save payment");
     } finally {
       setSaving(false);
     }
   }
+
+  /* ----------------------------- history ----------------------------- */
 
   async function openHistory(loan: Loan) {
     setHistoryLoan(loan);
-    setHistoryOpen(true);
     setHistory([]);
     setHistoryLoading(true);
 
     try {
-      const response = await fetch(`/api/loans/${loan._id}`, {
-        cache: "no-store",
-      });
+      const res = await fetch(`/api/loans/${loan._id}`, { cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message);
 
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Failed to load loan history.");
-      }
-
-      setHistory(result.transactions || []);
-      setHistoryLoan(result.data || loan);
-    } catch (err) {
-      window.alert(
-        err instanceof Error
-          ? err.message
-          : "Failed to load loan history.",
-      );
+      setHistory(json.transactions || []);
+      setHistoryLoan(json.data || loan);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not load history");
     } finally {
       setHistoryLoading(false);
     }
   }
 
-  async function handleDeleteLoan(loan: Loan) {
-    const confirmed = window.confirm(
-      `Delete this ${directionLabel(loan.direction).toLowerCase()} record for ${loan.counterpartyName}?\n\n` +
-        `Principal: ${formatPrice(loan.principalAmount)}\n` +
-        `Repaid: ${formatPrice(loan.totalRepaid)}\n\n` +
-        "The server will audit the deletion and delete the linked transactions too.",
-    );
+  /* ------------------------------ delete ------------------------------ */
 
-    if (!confirmed) return;
+  async function handleDelete(loan: Loan) {
+    const ok = await confirm({
+      title: "Delete this loan?",
+      description: `${kindLabel(loan.direction)} — ${loan.counterpartyName}, ${formatMoney(
+        loan.principalAmount,
+      )}. All payments saved for this loan will be deleted too.`,
+      confirmText: "Delete",
+    });
+    if (!ok) return;
 
     try {
-      const response = await fetch(`/api/loans/${loan._id}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(`/api/loans/${loan._id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message);
 
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Failed to delete loan.");
-      }
-
-      window.alert("Loan deleted successfully.");
-
-      await loadLoans();
-    } catch (err) {
-      window.alert(
-        err instanceof Error ? err.message : "Failed to delete loan.",
-      );
+      toast.success("Loan deleted.");
+      await refreshAll();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not delete loan");
     }
   }
 
-  const pageOutstanding = loans.reduce(
-    (sum, loan) =>
-      sum +
-      (loan.status === "VOIDED" ? 0 : loan.outstandingPrincipal || 0),
-    0,
-  );
-
-  const pageActiveLoans = loans.filter(
-    (loan) => loan.status === "ACTIVE",
-  ).length;
+  const editingPartnerLoan = editing?.counterpartyType === "PARTNER";
 
   return (
     <div className="space-y-6">
@@ -631,127 +460,119 @@ export default function LoansPage() {
             Loans
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Manage borrowed funds, partner advances, repayments, and outstanding balances.
+            Money you borrowed, or money you lent to a partner, and how much
+            is still to be paid back.
           </p>
         </div>
 
         <button
           type="button"
-          onClick={openCreateModal}
+          onClick={openCreate}
           className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800"
         >
           <Plus className="h-4 w-4" />
-          Add Loan
+          Add loan
         </button>
       </div>
 
-      {/* Summary cards are based on the currently displayed page */}
+      {/* Summary (all loans, not only this page) */}
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500">
-              Active Loans on Page
-            </p>
-            <Clock className="h-5 w-5 text-slate-400" />
-          </div>
-          <p className="mt-3 text-2xl font-semibold text-slate-900">
-            {pageActiveLoans}
+          <p className="text-sm font-medium text-slate-500">
+            You still have to pay back
+          </p>
+          <p className="mt-2 text-2xl font-semibold text-red-600">
+            {totals ? formatMoney(totals.youOwe) : "—"}
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            Money you borrowed and have not returned yet
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500">
-              Outstanding on Page
-            </p>
-            <Wallet className="h-5 w-5 text-slate-400" />
-          </div>
-          <p className="mt-3 text-2xl font-semibold text-slate-900">
-            {formatPrice(pageOutstanding)}
+          <p className="text-sm font-medium text-slate-500">
+            Partners still have to pay you
+          </p>
+          <p className="mt-2 text-2xl font-semibold text-amber-600">
+            {totals ? formatMoney(totals.partnersOwe) : "—"}
           </p>
           <p className="mt-1 text-xs text-slate-400">
-            Excludes voided loans. Change pages or filters to inspect other loans.
+            Money you lent to partners and not received back yet
           </p>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          setPage(1);
+          setSearch(searchInput.trim());
+        }}
+        className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 lg:grid-cols-[minmax(220px,1fr)_190px_170px_auto_auto]"
+      >
+        <div className="relative">
+          <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search by name..."
+            className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pr-3 pl-9 text-sm outline-none focus:border-sky-400 focus:bg-white focus:ring-4 focus:ring-sky-100"
+          />
+        </div>
+
+        <select
+          value={kindFilter}
+          onChange={(e) => {
             setPage(1);
-            setSearch(searchInput.trim());
+            setKindFilter(e.target.value);
           }}
-          className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_200px_160px_auto_auto]"
+          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400"
         >
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search lender or partner..."
-              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm outline-none focus:border-sky-400 focus:bg-white focus:ring-4 focus:ring-sky-100"
-            />
-          </div>
+          <option value="ALL">All loans</option>
+          <option value="BUSINESS_BORROWED">We borrowed</option>
+          <option value="PARTNER_ADVANCE">We lent to partner</option>
+        </select>
 
-          <select
-            value={directionFilter}
-            onChange={(event) => {
-              setPage(1);
-              setDirectionFilter(event.target.value);
-            }}
-            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-sky-400"
-          >
-            <option value="ALL">All Directions</option>
-            <option value="BUSINESS_BORROWED">Money Borrowed</option>
-            <option value="PARTNER_ADVANCE">Partner Advances</option>
-          </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => {
+            setPage(1);
+            setStatusFilter(e.target.value);
+          }}
+          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400"
+        >
+          <option value="ALL">Any status</option>
+          <option value="ACTIVE">Not fully paid</option>
+          <option value="SETTLED">Fully paid</option>
+          <option value="VOIDED">Cancelled</option>
+        </select>
 
-          <select
-            value={statusFilter}
-            onChange={(event) => {
-              setPage(1);
-              setStatusFilter(event.target.value);
-            }}
-            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-sky-400"
-          >
-            <option value="ALL">All Statuses</option>
-            <option value="ACTIVE">Active</option>
-            <option value="SETTLED">Settled</option>
-            <option value="VOIDED">Voided</option>
-          </select>
+        <button
+          type="submit"
+          className="h-10 rounded-xl bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800"
+        >
+          Search
+        </button>
 
-          <button
-            type="submit"
-            className="h-10 rounded-xl bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800"
-          >
-            Search
-          </button>
+        <button
+          type="button"
+          onClick={() => void refreshAll()}
+          disabled={loading}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
+      </form>
 
-          <button
-            type="button"
-            onClick={() => void loadLoans()}
-            disabled={loading}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </button>
-        </form>
-      </div>
-
-      {/* Loans table */}
+      {/* Table */}
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="flex flex-col gap-1 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-sm font-semibold text-slate-900">
-            Loan Records
-          </h2>
+          <h2 className="text-sm font-semibold text-slate-900">All loans</h2>
           <p className="text-xs text-slate-500">
             {totalCount === 0
-              ? "0 records"
+              ? "No loans"
               : `Showing ${(page - 1) * LIMIT + 1}–${Math.min(
                   page * LIMIT,
                   totalCount,
@@ -759,18 +580,7 @@ export default function LoansPage() {
           </p>
         </div>
 
-        {error ? (
-          <div className="p-8 text-center">
-            <p className="text-sm text-red-600">{error}</p>
-            <button
-              type="button"
-              onClick={() => void loadLoans()}
-              className="mt-3 text-sm font-medium text-slate-900 underline"
-            >
-              Try again
-            </button>
-          </div>
-        ) : loading ? (
+        {loading ? (
           <div className="flex h-56 items-center justify-center">
             <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-200 border-t-sky-600" />
           </div>
@@ -781,165 +591,159 @@ export default function LoansPage() {
               No loans found
             </p>
             <p className="mt-1 text-sm text-slate-500">
-              Add a loan or adjust your filters.
+              Press “Add loan” when you borrow money or lend to a partner.
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-left">
+            <table className="w-full min-w-[1000px] text-left">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50">
                   {[
-                    "Lender / Partner",
-                    "Direction",
-                    "Principal",
-                    "Repaid",
-                    "Outstanding",
-                    "Loan Date",
-                    "Due Date",
+                    "Name",
+                    "Type",
+                    "Amount",
+                    "Paid back",
+                    "Still to pay",
+                    "Date",
+                    "Pay back by",
                     "Status",
-                    "Actions",
-                  ].map((heading) => (
+                    "",
+                  ].map((h, i) => (
                     <th
-                      key={heading}
+                      key={i}
                       className="px-4 py-3 text-xs font-semibold text-slate-500"
                     >
-                      {heading}
+                      {h}
                     </th>
                   ))}
                 </tr>
               </thead>
-
               <tbody>
-                {loans.map((loan) => (
-                  <tr
-                    key={loan._id}
-                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70"
-                  >
-                    <td className="px-4 py-4">
-                      <p className="text-sm font-semibold text-slate-900">
-                        {loan.counterpartyName}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        {loan.counterpartyType}
-                      </p>
-                    </td>
-
-                    <td className="px-4 py-4">
-                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                        {loan.direction === "BUSINESS_BORROWED" ? (
-                          <ArrowDownLeft className="h-4 w-4 text-emerald-600" />
-                        ) : (
-                          <ArrowUpRight className="h-4 w-4 text-amber-600" />
+                {loans.map((loan) => {
+                  const st = statusInfo(loan.status);
+                  return (
+                    <tr
+                      key={loan._id}
+                      className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70"
+                    >
+                      <td className="px-4 py-4">
+                        <p className="text-sm font-semibold text-slate-900">
+                          {loan.counterpartyName}
+                        </p>
+                        {loan.counterpartyType === "PARTNER" && (
+                          <p className="mt-1 text-xs text-slate-400">
+                            Partner
+                          </p>
                         )}
-                        {directionLabel(loan.direction)}
-                      </span>
-                    </td>
+                      </td>
 
-                    <td className="px-4 py-4 text-sm text-slate-700">
-                      {formatPrice(loan.principalAmount)}
-                    </td>
-
-                    <td className="px-4 py-4 text-sm text-slate-700">
-                      {formatPrice(loan.totalRepaid)}
-                    </td>
-
-                    <td className="px-4 py-4 text-sm font-semibold text-slate-900">
-                      {formatPrice(loan.outstandingPrincipal)}
-                    </td>
-
-                    <td className="px-4 py-4 text-sm text-slate-600">
-                      {formatDate(loan.loanDate)}
-                    </td>
-
-                    <td className="px-4 py-4 text-sm text-slate-600">
-                      {formatDate(loan.dueDate)}
-                    </td>
-
-                    <td className="px-4 py-4">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${statusClasses(
-                          loan.status,
-                        )}`}
-                      >
-                        {loan.status}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-1">
-                        {loan.status !== "VOIDED" &&
-                          loan.outstandingPrincipal > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => openRepaymentModal(loan)}
-                              title="Record repayment"
-                              aria-label="Record repayment"
-                              className="flex h-8 w-8 items-center justify-center rounded-lg text-emerald-700 hover:bg-emerald-50"
-                            >
-                              <Wallet className="h-4 w-4" />
-                            </button>
+                      <td className="px-4 py-4">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                          {isBorrowed(loan) ? (
+                            <ArrowDownLeft className="h-4 w-4 text-emerald-600" />
+                          ) : (
+                            <ArrowUpRight className="h-4 w-4 text-amber-600" />
                           )}
+                          {kindLabel(loan.direction)}
+                        </span>
+                      </td>
 
-                        <button
-                          type="button"
-                          onClick={() => void openHistory(loan)}
-                          title="View transaction history"
-                          aria-label="View transaction history"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+                      <td className="px-4 py-4 text-sm text-slate-700">
+                        {formatMoney(loan.principalAmount)}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-slate-700">
+                        {formatMoney(loan.totalRepaid)}
+                      </td>
+                      <td className="px-4 py-4 text-sm font-semibold text-slate-900">
+                        {formatMoney(loan.outstandingPrincipal)}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-slate-600">
+                        {formatDate(loan.loanDate)}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-slate-600">
+                        {formatDate(loan.dueDate)}
+                      </td>
+                      <td className="px-4 py-4">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${st.cls}`}
                         >
-                          <Eye className="h-4 w-4" />
-                        </button>
+                          {st.label}
+                        </span>
+                      </td>
 
-                        {loan.status !== "VOIDED" && (
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-1">
+                          {loan.status !== "VOIDED" &&
+                            loan.outstandingPrincipal > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPayLoan(loan);
+                                  setPayForm(emptyPayForm());
+                                }}
+                                title={
+                                  isBorrowed(loan)
+                                    ? "We paid some back"
+                                    : "Partner paid some back"
+                                }
+                                className="flex h-8 w-8 items-center justify-center rounded-lg text-emerald-700 hover:bg-emerald-50"
+                              >
+                                <Wallet className="h-4 w-4" />
+                              </button>
+                            )}
                           <button
                             type="button"
-                            onClick={() => openEditModal(loan)}
-                            title="Edit loan"
-                            aria-label="Edit loan"
+                            onClick={() => void openHistory(loan)}
+                            title="See payments"
                             className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
                           >
-                            <Pencil className="h-4 w-4" />
+                            <Eye className="h-4 w-4" />
                           </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteLoan(loan)}
-                          title="Delete loan"
-                          aria-label="Delete loan"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {loan.status !== "VOIDED" && (
+                            <button
+                              type="button"
+                              onClick={() => openEdit(loan)}
+                              title="Edit"
+                              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(loan)}
+                            title="Delete"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
 
-        {/* Pagination */}
         <div className="flex items-center justify-between border-t border-slate-100 px-5 py-4">
           <p className="text-sm text-slate-500">
             Page {page} of {totalPages}
           </p>
-
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              onClick={() => setPage((c) => Math.max(1, c - 1))}
               disabled={loading || page <= 1}
               className="h-9 rounded-lg border border-slate-200 px-3 text-sm disabled:opacity-40"
             >
               Previous
             </button>
-
             <button
               type="button"
-              onClick={() => setPage((current) => current + 1)}
+              onClick={() => setPage((c) => c + 1)}
               disabled={loading || !hasMore}
               className="h-9 rounded-lg border border-slate-200 px-3 text-sm disabled:opacity-40"
             >
@@ -949,33 +753,25 @@ export default function LoansPage() {
         </div>
       </div>
 
-      {/* Add/Edit loan modal */}
+      {/* Add / edit loan */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/40 p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="loan-modal-title"
-            className="my-auto max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
-          >
+          <div className="my-auto max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="sticky top-0 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
               <div>
-                <h2
-                  id="loan-modal-title"
-                  className="text-lg font-semibold text-slate-900"
-                >
-                  {editingLoan ? "Edit Loan" : "Add Loan"}
+                <h2 className="text-lg font-semibold text-slate-900">
+                  {editing ? "Edit loan" : "Add loan"}
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  Record borrowed funds or a repayable partner advance.
+                  {editing
+                    ? `${kindLabel(editing.direction)} — ${editing.counterpartyName}`
+                    : "What happened?"}
                 </p>
               </div>
-
               <button
                 type="button"
-                onClick={closeLoanModal}
+                onClick={closeModal}
                 disabled={saving}
-                aria-label="Close modal"
                 className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-50"
               >
                 <X className="h-5 w-5" />
@@ -983,252 +779,170 @@ export default function LoansPage() {
             </div>
 
             <div className="space-y-4 p-5">
-              {!editingLoan && (
+              {!editing && (
                 <>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                      Transaction Direction
-                    </label>
-                    <select
-                      value={loanForm.direction}
-                      onChange={(event) => {
-                        const direction = event.target.value as LoanDirection;
-
-                        setLoanForm((current) => ({
-                          ...current,
-                          direction,
-                          counterpartyType:
-                            direction === "PARTNER_ADVANCE"
-                              ? "PARTNER"
-                              : "INDIVIDUAL",
-                          partnerId: "",
-                          counterpartyName: "",
-                        }));
-                      }}
-                      className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400"
-                    >
-                      <option value="BUSINESS_BORROWED">
-                        Business Borrows Money
-                      </option>
-                      <option value="PARTNER_ADVANCE">
-                        Business Gives Partner an Advance
-                      </option>
-                    </select>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {(
+                      [
+                        [
+                          "BUSINESS_BORROWED",
+                          "We borrowed money",
+                          "From a bank, a person or a partner",
+                        ],
+                        [
+                          "PARTNER_ADVANCE",
+                          "We lent money to a partner",
+                          "The partner will pay it back",
+                        ],
+                      ] as const
+                    ).map(([value, title, hint]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() =>
+                          setF({
+                            direction: value,
+                            partnerId: "",
+                            lenderName: "",
+                          })
+                        }
+                        className={`rounded-xl border px-4 py-3 text-left transition ${
+                          form.direction === value
+                            ? "border-sky-500 bg-sky-50"
+                            : "border-slate-200 hover:border-slate-300"
+                        }`}
+                      >
+                        <p className="text-sm font-semibold text-slate-900">
+                          {title}
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-500">{hint}</p>
+                      </button>
+                    ))}
                   </div>
 
-                  {loanForm.direction === "BUSINESS_BORROWED" && (
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                        Loan Type
-                      </label>
-                      <select
-                        value={loanForm.counterpartyType}
-                        onChange={(event) => {
-                          const counterpartyType =
-                            event.target.value as CounterpartyType;
-
-                          setLoanForm((current) => ({
-                            ...current,
-                            counterpartyType,
-                            partnerId: "",
-                            counterpartyName: "",
-                          }));
-                        }}
-                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400"
-                      >
-                        <option value="PARTNER">Registered Partner</option>
-                        <option value="BANK">Bank</option>
-                        <option value="INDIVIDUAL">Individual</option>
-                        <option value="OTHER">Other</option>
-                      </select>
-                    </div>
-                  )}
-
-                  {loanForm.counterpartyType === "PARTNER" ? (
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                        Partner *
-                      </label>
-                      <select
-                        value={loanForm.partnerId}
-                        onChange={(event) => {
-                          const partnerId = event.target.value;
-                          const partner = partners.find(
-                            (item) => item._id === partnerId,
-                          );
-
-                          setLoanForm((current) => ({
-                            ...current,
-                            partnerId,
-                            counterpartyName: partner?.name || "",
-                          }));
-                        }}
-                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400"
-                      >
-                        <option value="">Select partner</option>
-                        {partners.map((partner) => (
-                          <option key={partner._id} value={partner._id}>
-                            {partner.name}
-                            {partner.phone ? ` — ${partner.phone}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                      {partners.length === 0 && (
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      {form.direction === "BUSINESS_BORROWED"
+                        ? "Who lent you the money?"
+                        : "Which partner?"}
+                    </label>
+                    <select
+                      value={form.partnerId}
+                      onChange={(e) => setF({ partnerId: e.target.value })}
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400"
+                    >
+                      <option value="">
+                        {form.direction === "BUSINESS_BORROWED"
+                          ? "Someone else (bank, friend, other)"
+                          : "Select partner"}
+                      </option>
+                      {partners.map((p) => (
+                        <option key={p._id} value={p._id}>
+                          {p.name}
+                          {p.phone ? ` — ${p.phone}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {partners.length === 0 &&
+                      form.direction === "PARTNER_ADVANCE" && (
                         <p className="mt-1 text-xs text-amber-700">
-                          No partners are loaded. Add a partner first.
+                          Add a partner first on the Partners page.
                         </p>
                       )}
-                    </div>
-                  ) : (
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                        Lender Name *
-                      </label>
-                      <input
-                        value={loanForm.counterpartyName}
-                        onChange={(event) =>
-                          updateLoanField(
-                            "counterpartyName",
-                            event.target.value,
-                          )
-                        }
-                        maxLength={150}
-                        placeholder="Enter lender or institution name"
-                        className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400"
-                      />
-                    </div>
-                  )}
+                  </div>
                 </>
               )}
 
-              {editingLoan && (
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-sm font-medium text-slate-900">
-                    {editingLoan.counterpartyName}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {directionLabel(editingLoan.direction)} ·{" "}
-                    {formatPrice(editingLoan.principalAmount)}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Financial terms are changed through the audited loan endpoint.
-                  </p>
+              {((!editing &&
+                form.direction === "BUSINESS_BORROWED" &&
+                !form.partnerId) ||
+                (editing && !editingPartnerLoan)) && (
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Name of lender
+                  </label>
+                  <input
+                    value={form.lenderName}
+                    onChange={(e) => setF({ lenderName: e.target.value })}
+                    maxLength={150}
+                    placeholder="e.g. HBL Bank, Bilal Ahmed"
+                    className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400"
+                  />
                 </div>
               )}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Principal Amount (JPY) *
+                    Amount
                   </label>
                   <input
                     type="number"
                     min="0.01"
                     step="0.01"
-                    value={loanForm.principalAmount}
-                    onChange={(event) =>
-                      updateLoanField(
-                        "principalAmount",
-                        event.target.value,
-                      )
-                    }
-                    disabled={
-                      Boolean(editingLoan) &&
-                      editingLoan?.status === "SETTLED"
-                    }
+                    value={form.amount}
+                    onChange={(e) => setF({ amount: e.target.value })}
                     placeholder="0"
-                    className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400 disabled:bg-slate-100"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Payment Method
-                  </label>
-                  <select
-                    value={loanForm.paymentMethod}
-                    onChange={(event) =>
-                      updateLoanField(
-                        "paymentMethod",
-                        event.target.value as PaymentMethod,
-                      )
-                    }
-                    disabled={Boolean(editingLoan)}
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400 disabled:bg-slate-100"
-                  >
-                    {paymentMethods.map((method) => (
-                      <option key={method} value={method}>
-                        {method}
-                      </option>
-                    ))}
-                  </select>
-                  {editingLoan && (
-                    <p className="mt-1 text-xs text-slate-400">
-                      Method belongs to the opening transaction; edit it separately if needed.
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Loan Date *
-                  </label>
-                  <input
-                    type="date"
-                    value={loanForm.loanDate}
-                    onChange={(event) =>
-                      updateLoanField("loanDate", event.target.value)
-                    }
-                    disabled={Boolean(editingLoan)}
-                    className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400 disabled:bg-slate-100"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Due Date
-                  </label>
-                  <input
-                    type="date"
-                    value={loanForm.dueDate}
-                    min={loanForm.loanDate || undefined}
-                    onChange={(event) =>
-                      updateLoanField("dueDate", event.target.value)
-                    }
                     className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400"
                   />
                 </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={form.loanDate}
+                    onChange={(e) => setF({ loanDate: e.target.value })}
+                    className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Pay back by (optional)
+                  </label>
+                  <input
+                    type="date"
+                    value={form.dueDate}
+                    min={form.loanDate || undefined}
+                    onChange={(e) => setF({ dueDate: e.target.value })}
+                    className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400"
+                  />
+                </div>
+
+                {!editing && (
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      How was it paid?
+                    </label>
+                    <select
+                      value={form.method}
+                      onChange={(e) => setF({ method: e.target.value })}
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400"
+                    >
+                      {METHODS.map(([v, l]) => (
+                        <option key={v} value={v}>
+                          {l}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Reference
-                </label>
-                <input
-                  value={loanForm.reference}
-                  onChange={(event) =>
-                    updateLoanField("reference", event.target.value)
-                  }
-                  maxLength={150}
-                  placeholder="Receipt or transaction reference"
-                  disabled={Boolean(editingLoan)}
-                  className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400 disabled:bg-slate-100"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Notes
+                  Note (optional)
                 </label>
                 <textarea
                   rows={3}
-                  value={loanForm.notes}
-                  onChange={(event) =>
-                    updateLoanField("notes", event.target.value)
-                  }
+                  value={form.notes}
                   maxLength={2000}
-                  placeholder="Purpose or other details..."
-                  className="w-full resize-y rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-sky-400"
+                  onChange={(e) => setF({ notes: e.target.value })}
+                  placeholder="Why was it needed? Any agreement?"
+                  className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-sky-400"
                 />
               </div>
             </div>
@@ -1236,7 +950,7 @@ export default function LoansPage() {
             <div className="flex justify-end gap-3 border-t border-slate-100 px-5 py-4">
               <button
                 type="button"
-                onClick={closeLoanModal}
+                onClick={closeModal}
                 disabled={saving}
                 className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 disabled:opacity-50"
               >
@@ -1244,48 +958,36 @@ export default function LoansPage() {
               </button>
               <button
                 type="button"
-                onClick={() => void handleSaveLoan()}
+                onClick={() => void handleSave()}
                 disabled={saving}
                 className="h-10 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white disabled:opacity-50"
               >
-                {saving
-                  ? "Saving..."
-                  : editingLoan
-                    ? "Update Loan"
-                    : "Save Loan"}
+                {saving ? "Saving..." : editing ? "Save changes" : "Save loan"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Repayment modal */}
-      {repaymentOpen && repaymentLoan && (
+      {/* Record a payment */}
+      {payLoan && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/40 p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="repayment-modal-title"
-            className="my-auto w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl"
-          >
+          <div className="my-auto w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
-                <h2
-                  id="repayment-modal-title"
-                  className="text-lg font-semibold text-slate-900"
-                >
-                  Record Repayment
+                <h2 className="text-lg font-semibold text-slate-900">
+                  {isBorrowed(payLoan)
+                    ? "We paid back some money"
+                    : "Partner paid back some money"}
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  {repaymentLoan.counterpartyName}
+                  {payLoan.counterpartyName}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setRepaymentOpen(false)}
-                disabled={saving}
-                aria-label="Close repayment form"
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                onClick={() => !saving && setPayLoan(null)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -1293,29 +995,24 @@ export default function LoansPage() {
 
             <div className="space-y-4 p-5">
               <div className="rounded-xl bg-slate-50 p-4">
-                <p className="text-sm text-slate-500">
-                  Outstanding Principal
-                </p>
+                <p className="text-sm text-slate-500">Still to pay</p>
                 <p className="mt-1 text-2xl font-semibold text-slate-900">
-                  {formatPrice(repaymentLoan.outstandingPrincipal)}
+                  {formatMoney(payLoan.outstandingPrincipal)}
                 </p>
               </div>
 
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Repayment Amount (JPY) *
+                  Amount
                 </label>
                 <input
                   type="number"
                   min="0.01"
-                  max={repaymentLoan.outstandingPrincipal}
+                  max={payLoan.outstandingPrincipal}
                   step="0.01"
-                  value={repaymentForm.amount}
-                  onChange={(event) =>
-                    setRepaymentForm((current) => ({
-                      ...current,
-                      amount: event.target.value,
-                    }))
+                  value={payForm.amount}
+                  onChange={(e) =>
+                    setPayForm((f) => ({ ...f, amount: e.target.value }))
                   }
                   placeholder="0"
                   className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400"
@@ -1323,54 +1020,45 @@ export default function LoansPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    setRepaymentForm((current) => ({
-                      ...current,
-                      amount: String(
-                        repaymentLoan.outstandingPrincipal,
-                      ),
+                    setPayForm((f) => ({
+                      ...f,
+                      amount: String(payLoan.outstandingPrincipal),
                     }))
                   }
-                  className="mt-2 text-xs font-medium text-sky-700 hover:underline"
+                  className="mt-1 text-xs font-medium text-sky-700 hover:underline"
                 >
-                  Use full outstanding amount
+                  Pay everything ({formatMoney(payLoan.outstandingPrincipal)})
                 </button>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Repayment Date *
+                    Date
                   </label>
                   <input
                     type="date"
-                    value={repaymentForm.transactionDate}
-                    onChange={(event) =>
-                      setRepaymentForm((current) => ({
-                        ...current,
-                        transactionDate: event.target.value,
-                      }))
+                    value={payForm.date}
+                    onChange={(e) =>
+                      setPayForm((f) => ({ ...f, date: e.target.value }))
                     }
                     className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400"
                   />
                 </div>
-
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Payment Method
+                    How was it paid?
                   </label>
                   <select
-                    value={repaymentForm.paymentMethod}
-                    onChange={(event) =>
-                      setRepaymentForm((current) => ({
-                        ...current,
-                        paymentMethod: event.target.value as PaymentMethod,
-                      }))
+                    value={payForm.method}
+                    onChange={(e) =>
+                      setPayForm((f) => ({ ...f, method: e.target.value }))
                     }
                     className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-400"
                   >
-                    {paymentMethods.map((method) => (
-                      <option key={method} value={method}>
-                        {method}
+                    {METHODS.map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {l}
                       </option>
                     ))}
                   </select>
@@ -1379,38 +1067,16 @@ export default function LoansPage() {
 
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Reference
-                </label>
-                <input
-                  value={repaymentForm.reference}
-                  onChange={(event) =>
-                    setRepaymentForm((current) => ({
-                      ...current,
-                      reference: event.target.value,
-                    }))
-                  }
-                  maxLength={150}
-                  placeholder="Optional transaction reference"
-                  className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Notes
+                  Note (optional)
                 </label>
                 <textarea
-                  rows={3}
-                  value={repaymentForm.notes}
-                  onChange={(event) =>
-                    setRepaymentForm((current) => ({
-                      ...current,
-                      notes: event.target.value,
-                    }))
-                  }
+                  rows={2}
+                  value={payForm.notes}
                   maxLength={2000}
-                  placeholder="Optional repayment notes..."
-                  className="w-full resize-y rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-sky-400"
+                  onChange={(e) =>
+                    setPayForm((f) => ({ ...f, notes: e.target.value }))
+                  }
+                  className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-sky-400"
                 />
               </div>
             </div>
@@ -1418,7 +1084,7 @@ export default function LoansPage() {
             <div className="flex justify-end gap-3 border-t border-slate-100 px-5 py-4">
               <button
                 type="button"
-                onClick={() => setRepaymentOpen(false)}
+                onClick={() => setPayLoan(null)}
                 disabled={saving}
                 className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600"
               >
@@ -1426,43 +1092,34 @@ export default function LoansPage() {
               </button>
               <button
                 type="button"
-                onClick={() => void handleSaveRepayment()}
+                onClick={() => void handlePay()}
                 disabled={saving}
                 className="h-10 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white disabled:opacity-50"
               >
-                {saving ? "Saving..." : "Save Repayment"}
+                {saving ? "Saving..." : "Save"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Transaction history modal */}
-      {historyOpen && historyLoan && (
+      {/* Payments list */}
+      {historyLoan && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/40 p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="loan-history-title"
-            className="my-auto max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
-          >
+          <div className="my-auto max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
-                <h2
-                  id="loan-history-title"
-                  className="text-lg font-semibold text-slate-900"
-                >
-                  Loan History
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Payments for this loan
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
                   {historyLoan.counterpartyName} ·{" "}
-                  {directionLabel(historyLoan.direction)}
+                  {kindLabel(historyLoan.direction)}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setHistoryOpen(false)}
-                aria-label="Close loan history"
+                onClick={() => setHistoryLoan(null)}
                 className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
               >
                 <X className="h-5 w-5" />
@@ -1470,24 +1127,18 @@ export default function LoansPage() {
             </div>
 
             <div className="grid gap-3 border-b border-slate-100 p-5 sm:grid-cols-3">
-              <div>
-                <p className="text-xs text-slate-500">Principal</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">
-                  {formatPrice(historyLoan.principalAmount)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">Repaid</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">
-                  {formatPrice(historyLoan.totalRepaid)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">Outstanding</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">
-                  {formatPrice(historyLoan.outstandingPrincipal)}
-                </p>
-              </div>
+              {[
+                ["Amount", historyLoan.principalAmount],
+                ["Paid back", historyLoan.totalRepaid],
+                ["Still to pay", historyLoan.outstandingPrincipal],
+              ].map(([label, value]) => (
+                <div key={label as string}>
+                  <p className="text-xs text-slate-500">{label}</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {formatMoney(value as number)}
+                  </p>
+                </div>
+              ))}
             </div>
 
             {historyLoading ? (
@@ -1495,78 +1146,51 @@ export default function LoansPage() {
                 <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-200 border-t-sky-600" />
               </div>
             ) : history.length === 0 ? (
-              <div className="p-8 text-center">
-                <p className="text-sm font-medium text-slate-800">
-                  No transactions found
-                </p>
-              </div>
+              <p className="p-8 text-center text-sm text-slate-500">
+                Nothing recorded yet.
+              </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[600px] text-left">
-                  <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50">
-                      {["Date", "Transaction", "Amount", "Method", "Reference"].map(
-                        (heading) => (
-                          <th
-                            key={heading}
-                            className="px-4 py-3 text-xs font-semibold text-slate-500"
-                          >
-                            {heading}
-                          </th>
-                        ),
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {history.map((transaction) => {
-                      const opening =
-                        transaction.type === "LOAN_RECEIVED" ||
-                        transaction.type === "PARTNER_ADVANCE_GIVEN";
-
-                      return (
-                        <tr
-                          key={transaction._id}
-                          className="border-b border-slate-100 last:border-0"
-                        >
-                          <td className="px-4 py-3 text-sm text-slate-600">
-                            {formatDate(transaction.transactionDate)}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-slate-700">
-                            {transactionLabel(transaction.type)}
-                            {transaction.status === "VOIDED" && (
-                              <span className="ml-1 text-xs text-red-600">
-                                Voided
-                              </span>
-                            )}
-                          </td>
-                          <td
-                            className={`px-4 py-3 text-sm font-semibold ${
-                              opening
-                                ? "text-emerald-700"
-                                : "text-slate-900"
-                            }`}
-                          >
-                            {opening ? "+" : "−"}
-                            {formatPrice(transaction.amount)}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-slate-600">
-                            {transaction.paymentMethod}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-slate-500">
-                            {transaction.reference || "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="divide-y divide-slate-100">
+                {history.map((t) => {
+                  const opening =
+                    t.type === "LOAN_RECEIVED" ||
+                    t.type === "PARTNER_ADVANCE_GIVEN";
+                  return (
+                    <div
+                      key={t._id}
+                      className="flex items-center justify-between gap-4 px-5 py-3"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">
+                          {txLabel(t.type)}
+                          {t.status === "VOIDED" && (
+                            <span className="ml-2 text-xs text-red-600">
+                              Cancelled
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {formatDate(t.transactionDate)} ·{" "}
+                          {methodLabel(t.paymentMethod)}
+                        </p>
+                      </div>
+                      <p
+                        className={`text-sm font-semibold ${
+                          opening ? "text-slate-500" : "text-emerald-700"
+                        }`}
+                      >
+                        {formatMoney(t.amount)}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
             <div className="flex justify-end border-t border-slate-100 px-5 py-4">
               <button
                 type="button"
-                onClick={() => setHistoryOpen(false)}
+                onClick={() => setHistoryLoan(null)}
                 className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600"
               >
                 Close

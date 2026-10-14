@@ -1,341 +1,310 @@
 import { NextResponse } from "next/server";
-import {connectDB} from "@/lib/mongodb";
-
+import { connectDB } from "@/lib/mongodb";
 import Vehicle from "@/models/Vehicle";
 import Sale from "@/models/Sale";
 import Payment from "@/models/Payment";
 import VehicleExpense from "@/models/VehicleExpense";
-import GeneralExpense from "@/models/GeneralExpense";
-import { Types } from "mongoose";
+import Loan from "@/models/Loan";
+import FinanceTransaction from "@/models/FinanceTransaction";
+import { SIGNED_AMOUNT, netPaidBySale } from "@/lib/paymentTotals";
+import { computeMoneyOverview } from "@/controllers/moneyController";
 
-type PopulatedVehicle = {
-  _id: Types.ObjectId;
-  name: string;
-  model: string;
-  chassisNumber: string;
-  registrationNumber?: string;
-  purchasePrice?: number;
-};
+const DAY = 86_400_000;
 
 export async function getDashboard() {
   try {
     await connectDB();
 
-    /*
-     * ---------------------------------------------------------
-     * INVENTORY COUNTS
-     * ---------------------------------------------------------
-     */
-    const [
-      totalVehicles,
-      availableVehicles,
-      soldVehicles,
-      discardedVehicles,
-    ] = await Promise.all([
-      Vehicle.countDocuments(),
-      Vehicle.countDocuments({ status: "AVAILABLE" }),
-      Vehicle.countDocuments({ status: "SOLD" }),
-      Vehicle.countDocuments({ status: "DISCARDED" }),
-    ]);
+    const now = new Date();
+    const y = now.getUTCFullYear();
+    const m = now.getUTCMonth();
 
-    /*
-     * ---------------------------------------------------------
-     * SALES
-     * ---------------------------------------------------------
-     */
-    const sales = await Sale.find({ status: { $ne: "RETURNED" }})
-      .select(
-        "vehicleId saleType salePrice saleDate",
-      )
-      .populate<{ vehicleId: PopulatedVehicle | null }>({
-        path: "vehicleId",
-        select: "name model chassisNumber registrationNumber purchasePrice",
-      })
-      .sort({ saleDate: -1, createdAt: -1 })
-      .lean();
-    const refundAgg = await Sale.aggregate([
-        { $match: { status: "RETURNED" } },
-        { $group: { _id: null, total: { $sum: "$refundAmount" } } },
-      ]);
-    const totalRefunds: number = refundAgg[0]?.total ?? 0;
-    /*
-     * ---------------------------------------------------------
-     * PAYMENTS
-     * ---------------------------------------------------------
-     */
-    const paymentTotals = await Payment.aggregate([
-      {
-        $group: {
-          _id: "$saleId",
-          totalPaid: { $sum: "$amount" },
-        },
-      },
-    ]);
+    const monthStart = new Date(Date.UTC(y, m, 1));
+    const chartStart = new Date(Date.UTC(y, m - 5, 1));
 
-    const paymentMap = new Map<string, number>();
-
-    for (const item of paymentTotals) {
-      paymentMap.set(
-        String(item._id),
-        Number(item.totalPaid || 0),
-      );
-    }
-
-    const allPaymentsTotal = paymentTotals.reduce(
-      (sum, item) =>
-        sum + Number(item.totalPaid || 0),
-      0,
-    );
-
-    /*
-     * ---------------------------------------------------------
-     * VEHICLE EXPENSES
-     * ---------------------------------------------------------
-     */
-    const vehicleExpenses = await VehicleExpense.find()
-      .select(
-        "vehicleId title amount expenseDate",
-      )
-      .sort({
-        expenseDate: -1,
-        createdAt: -1,
-      })
-      .lean();
-
-    const totalVehicleExpenses =
-      vehicleExpenses.reduce(
-        (sum, expense) =>
-          sum + Number(expense.amount || 0),
-        0,
-      );
-
-    /*
-     * ---------------------------------------------------------
-     * GENERAL EXPENSES
-     * ---------------------------------------------------------
-     */
-    const generalExpenses = await GeneralExpense.find()
-      .select("title amount expenseDate")
-      .sort({
-        expenseDate: -1,
-        createdAt: -1,
-      })
-      .lean();
-
-    const totalGeneralExpenses =
-      generalExpenses.reduce(
-        (sum, expense) =>
-          sum + Number(expense.amount || 0),
-        0,
-      );
-
-    /*
-     * ---------------------------------------------------------
-     * SALES TOTAL + OUTSTANDING
-     * ---------------------------------------------------------
-     */
-    const totalSales = sales.reduce(
-      (sum, sale) =>
-        sum + Number(sale.salePrice || 0),
-      0,
-    );
-
-    let totalOutstanding = 0;
-
-    for (const sale of sales) {
-      const paid =
-        paymentMap.get(String(sale._id)) || 0;
-
-      totalOutstanding += Math.max(
-        Number(sale.salePrice || 0) - paid,
-        0,
-      );
-    }
-
-    /*
-     * ---------------------------------------------------------
-     * VEHICLE PROFITABILITY
-     *
-     * Investment:
-     * purchase price + vehicle expenses up to sale date
-     * ---------------------------------------------------------
-     */
-    const soldSales = sales.filter(
-      (sale) => sale.vehicleId,
-    );
-
-    let grossVehicleProfit = 0;
-
-    const profitability = soldSales.map((sale) => {
-      const vehicle = sale.vehicleId;
-
-      const purchasePrice = Number(
-        vehicle?.purchasePrice || 0,
-      );
-
-      const saleDate = new Date(sale.saleDate);
-
-      const vehicleExpenseTotal =
-        vehicleExpenses
-          .filter(
-            (expense) =>
-              String(expense.vehicleId) ===
-                String(vehicle?._id) &&
-              new Date(expense.expenseDate) <=
-                saleDate,
-          )
-          .reduce(
-            (sum, expense) =>
-              sum + Number(expense.amount || 0),
-            0,
-          );
-
-      const investment =
-        purchasePrice + vehicleExpenseTotal;
-
-      const profit =
-        Number(sale.salePrice || 0) - investment;
-
-      grossVehicleProfit += profit;
-
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(Date.UTC(y, m - 5 + i, 1));
       return {
-        saleId: sale._id,
-        vehicle: {
-          _id: vehicle?._id,
-          name: vehicle?.name,
-          model: vehicle?.model,
-          chassisNumber: vehicle?.chassisNumber,
-        },
-        purchasePrice,
-        vehicleExpenses: vehicleExpenseTotal,
-        investment,
-        salePrice: Number(sale.salePrice || 0),
-        profit,
-        saleDate: sale.saleDate,
+        key: d.toISOString().slice(0, 7),
+        label: d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }),
       };
     });
 
-    const businessNetProfit =
-      grossVehicleProfit - totalGeneralExpenses;
+    const [
+      available,
+      soldSoFar,
+      sales,
+      netPaid,
+      monthPayments,
+      monthReturns,
+      paymentsByMonth,
+      returnsByMonth,
+      recentPayments,
+      recentReturns,
+      money,
+    ] = await Promise.all([
+      Vehicle.find({ status: "AVAILABLE" })
+        .select("name model purchasePrice purchaseDate createdAt")
+        .lean(),
 
-    /*
-     * ---------------------------------------------------------
-     * RECENT PAYMENTS
-     * ---------------------------------------------------------
-     */
-    const recentPayments = await Payment.find()
-      .select(
-        "saleId amount paymentDate paymentMethod notes",
-      )
-      .populate({
-        path: "saleId",
-        select: "saleType salePrice vehicleId",
-        populate: {
-          path: "vehicleId",
-          select: "name model chassisNumber",
+      Vehicle.countDocuments({ status: "SOLD" }),
+
+      Sale.find({ status: { $ne: "RETURNED" } })
+        .select("vehicleId salePrice saleDate")
+        .populate("vehicleId", "name model")
+        .sort({ saleDate: -1, createdAt: -1 })
+        .lean(),
+
+      netPaidBySale(),
+
+      Payment.aggregate([
+        { $match: { paymentDate: { $gte: monthStart } } },
+        { $group: { _id: "$type", total: { $sum: "$amount" } } },
+      ]),
+
+      Sale.aggregate([
+        { $match: { status: "RETURNED", returnDate: { $gte: monthStart } } },
+        { $group: { _id: null, total: { $sum: "$refundAmount" } } },
+      ]),
+
+      Payment.aggregate([
+        { $match: { paymentDate: { $gte: chartStart } } },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m", date: "$paymentDate" } },
+            total: { $sum: SIGNED_AMOUNT },
+          },
         },
-      })
-      .sort({
-        paymentDate: -1,
-        createdAt: -1,
-      })
-      .limit(5)
+      ]),
+
+      Sale.aggregate([
+        { $match: { status: "RETURNED", returnDate: { $gte: chartStart } } },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m", date: "$returnDate" } },
+            total: { $sum: "$refundAmount" },
+          },
+        },
+      ]),
+
+      Payment.find()
+        .select("saleId amount type paymentDate")
+        .populate({
+          path: "saleId",
+          select: "vehicleId",
+          populate: { path: "vehicleId", select: "name model" },
+        })
+        .sort({ paymentDate: -1, createdAt: -1 })
+        .limit(6)
+        .lean(),
+
+      Sale.find({ status: "RETURNED" })
+        .select("vehicleId refundAmount returnDate")
+        .populate("vehicleId", "name model")
+        .sort({ returnDate: -1 })
+        .limit(3)
+        .lean(),
+
+      computeMoneyOverview().catch(() => null),
+    ]);
+
+    /* ------------------------------ stock ------------------------------ */
+    const stockIds = available.map((v: any) => v._id);
+
+    const stockExpenseRows = stockIds.length
+      ? await VehicleExpense.aggregate([
+          { $match: { vehicleId: { $in: stockIds } } },
+          { $group: { _id: "$vehicleId", total: { $sum: "$amount" } } },
+        ])
+      : [];
+
+    const expenseByVehicle = new Map(
+      stockExpenseRows.map((r: any) => [String(r._id), Number(r.total)]),
+    );
+
+    const stockItems = available.map((v: any) => {
+      const cost =
+        Number(v.purchasePrice || 0) + (expenseByVehicle.get(String(v._id)) || 0);
+      const since = new Date(v.purchaseDate || v.createdAt).getTime();
+      return {
+        _id: String(v._id),
+        name: `${v.name} ${v.model || ""}`.trim(),
+        days: Math.max(0, Math.floor((now.getTime() - since) / DAY)),
+        cost,
+      };
+    });
+
+    const stockCost = stockItems.reduce((s, v) => s + v.cost, 0);
+    const oldest = [...stockItems].sort((a, b) => b.days - a.days).slice(0, 5);
+
+    /* ----------------------------- customers ----------------------------- */
+    let outstanding = 0;
+    const owed: {
+      saleId: string;
+      name: string;
+      price: number;
+      remaining: number;
+      days: number;
+      saleDate: Date;
+    }[] = [];
+
+    for (const sale of sales as any[]) {
+      const paid = netPaid.get(String(sale._id)) || 0;
+      const remaining = Math.max(Number(sale.salePrice) - paid, 0);
+      if (remaining <= 0.005) continue;
+
+      outstanding += remaining;
+      owed.push({
+        saleId: String(sale._id),
+        name: `${sale.vehicleId?.name || "Vehicle"} ${sale.vehicleId?.model || ""}`.trim(),
+        price: Number(sale.salePrice),
+        remaining,
+        days: Math.max(0, Math.floor((now.getTime() - new Date(sale.saleDate).getTime()) / DAY)),
+        saleDate: sale.saleDate,
+      });
+    }
+
+    const owedList = owed
+      .sort((a, b) => new Date(a.saleDate).getTime() - new Date(b.saleDate).getTime())
+      .slice(0, 5)
+      .map(({ saleDate, ...rest }) => rest);
+
+    /* ------------------------------- month ------------------------------- */
+    const soldThisMonth = (sales as any[]).filter(
+      (s) => new Date(s.saleDate) >= monthStart,
+    );
+
+    let received = 0;
+    let refunded = Number(monthReturns[0]?.total || 0);
+
+    for (const row of monthPayments) {
+      if (row._id === "REFUND") refunded += row.total;
+      else received += row.total;
+    }
+
+    /* ------------------------------- chart ------------------------------- */
+    const salesByMonth = new Map<string, number>();
+    for (const s of sales as any[]) {
+      const key = new Date(s.saleDate).toISOString().slice(0, 7);
+      salesByMonth.set(key, (salesByMonth.get(key) || 0) + Number(s.salePrice));
+    }
+
+    const paidMonth = new Map(paymentsByMonth.map((r: any) => [r._id, r.total as number]));
+    const returnedMonth = new Map(returnsByMonth.map((r: any) => [r._id, r.total as number]));
+
+    const chart = months.map(({ key, label }) => ({
+      label,
+      sales: salesByMonth.get(key) || 0,
+      received: (paidMonth.get(key) || 0) - (returnedMonth.get(key) || 0),
+    }));
+
+    /* ----------------------------- loans due ----------------------------- */
+    const dueLoans = await Loan.find({
+      status: "ACTIVE",
+      dueDate: { $ne: null, $lte: new Date(now.getTime() + 14 * DAY) },
+    })
+      .select("direction counterpartyName principalAmount dueDate")
+      .sort({ dueDate: 1 })
+      .limit(10)
       .lean();
 
-    /*
-     * ---------------------------------------------------------
-     * RECENT SALES
-     * ---------------------------------------------------------
-     */
-    const recentSales = sales
-      .slice(0, 5)
-      .map((sale) => {
-        const totalPaid =
-          paymentMap.get(String(sale._id)) || 0;
+    const repaidRows = dueLoans.length
+      ? await FinanceTransaction.aggregate([
+          {
+            $match: {
+              status: "VALID",
+              type: { $in: ["LOAN_PRINCIPAL_REPAYMENT", "PARTNER_ADVANCE_REPAID"] },
+              loanId: { $in: dueLoans.map((l: any) => l._id) },
+            },
+          },
+          { $group: { _id: "$loanId", total: { $sum: "$amount" } } },
+        ])
+      : [];
 
-        return {
-          _id: sale._id,
-          saleType: sale.saleType,
-          salePrice: Number(sale.salePrice || 0),
-          saleDate: sale.saleDate,
-          totalPaid,
-          remaining: Math.max(
-            Number(sale.salePrice || 0) -
-              totalPaid,
-            0,
-          ),
-          paymentStatus:
-            Number(sale.salePrice || 0) -
-              totalPaid <=
-            0
-              ? "PAID"
-              : "PARTIAL",
-          vehicle: sale.vehicleId
-            ? {
-                _id: sale.vehicleId._id,
-                name: sale.vehicleId.name,
-                model: sale.vehicleId.model,
-                chassisNumber:
-                  sale.vehicleId.chassisNumber,
-              }
-            : null,
-        };
-      });
+    const repaid = new Map(repaidRows.map((r: any) => [String(r._id), Number(r.total)]));
 
-    /*
-     * ---------------------------------------------------------
-     * RESPONSE
-     * ---------------------------------------------------------
-     */
+    const loansDue = (dueLoans as any[])
+      .map((l) => ({
+        _id: String(l._id),
+        direction: l.direction,
+        name: l.counterpartyName,
+        outstanding: Math.max(Number(l.principalAmount) - (repaid.get(String(l._id)) || 0), 0),
+        dueDate: l.dueDate,
+        overdue: new Date(l.dueDate) < now,
+      }))
+      .filter((l) => l.outstanding > 0.005)
+      .slice(0, 5);
+
+    /* ----------------------------- activity ----------------------------- */
+    type Item = {
+      id: string;
+      kind: "sale" | "payment" | "refund" | "return";
+      title: string;
+      amount: number;
+      date: Date;
+    };
+
+    const nameOf = (v: any) => `${v?.name || "Vehicle"} ${v?.model || ""}`.trim();
+
+    const activity: Item[] = [
+      ...(sales as any[]).slice(0, 6).map((s) => ({
+        id: `s-${s._id}`,
+        kind: "sale" as const,
+        title: nameOf(s.vehicleId),
+        amount: Number(s.salePrice),
+        date: s.saleDate,
+      })),
+      ...(recentPayments as any[]).map((p) => ({
+        id: `p-${p._id}`,
+        kind: (p.type === "REFUND" ? "refund" : "payment") as Item["kind"],
+        title: nameOf(p.saleId?.vehicleId),
+        amount: Number(p.amount),
+        date: p.paymentDate,
+      })),
+      ...(recentReturns as any[]).map((r) => ({
+        id: `r-${r._id}`,
+        kind: "return" as const,
+        title: nameOf(r.vehicleId),
+        amount: Number(r.refundAmount || 0),
+        date: r.returnDate,
+      })),
+    ]
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 8);
+
     return NextResponse.json({
       success: true,
-
       data: {
-        summary: {
-          totalVehicles,
-          availableVehicles,
-          soldVehicles,
-          discardedVehicles,
-
-          totalSales,
-          totalReceived: allPaymentsTotal - totalRefunds,
-          totalOutstanding,
-
-          totalVehicleExpenses,
-          totalGeneralExpenses,
-
-          grossVehicleProfit,
-          businessNetProfit,
-
-          salesCount: sales.length,
-          paymentCount: await Payment.countDocuments(),
-          vehicleExpenseCount:
-            vehicleExpenses.length,
-          generalExpenseCount:
-            generalExpenses.length,
+        stock: { count: available.length, cost: stockCost, soldSoFar, oldest },
+        month: {
+          label: now.toLocaleDateString("en-US", {
+            month: "long",
+            year: "numeric",
+            timeZone: "UTC",
+          }),
+          soldCount: soldThisMonth.length,
+          soldValue: soldThisMonth.reduce((s, x: any) => s + Number(x.salePrice), 0),
+          received: received - refunded,
+          refunded,
         },
-
-        recentSales,
-
-        recentPayments,
-
-        recentVehicleExpenses:
-          vehicleExpenses.slice(0, 5),
-
-        recentGeneralExpenses:
-          generalExpenses.slice(0, 5),
-
-        profitability,
+        outstanding,
+        owedList,
+        chart,
+        loansDue,
+        activity,
+        money: money
+          ? {
+              cash: money.cashEstimate,
+              youOwe: money.youOwe,
+              partnersOwe: money.partnersOweLoans + money.stillWithPartners,
+            }
+          : null,
       },
     });
   } catch (error) {
     console.error("Get dashboard error:", error);
-
     return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to load dashboard",
-      },
+      { success: false, message: "Failed to load dashboard" },
       { status: 500 },
     );
   }

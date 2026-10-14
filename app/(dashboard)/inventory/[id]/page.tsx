@@ -75,13 +75,13 @@ function formatPrice(value?: number | null) {
     return "—";
   }
 
-  return `Rs. ${value.toLocaleString("en-PK")}`;
+  return `¥. ${value.toLocaleString("en-JP")}`;
 }
 
 function formatDate(value?: string) {
   if (!value) return "—";
 
-  return new Date(value).toLocaleDateString("en-PK", {
+  return new Date(value).toLocaleDateString("en-JP", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -650,7 +650,7 @@ export default function VehicleViewPage({ params }: Props) {
             label="Mileage"
             value={
               vehicle.mileage != null
-                ? `${vehicle.mileage.toLocaleString("en-PK")} km`
+                ? `${vehicle.mileage.toLocaleString("en-JP")} km`
                 : undefined
             }
           />

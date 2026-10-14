@@ -6,6 +6,7 @@ import Payment from "@/models/Payment";
 import mongoose from "mongoose";
 import { createAuditLog } from "@/lib/audit";
 import { getPaginationParams } from "@/lib/pagination";
+import { SIGNED_AMOUNT } from "@/lib/paymentTotals";
 
 type AuditActor = {
   userId: string;
@@ -182,7 +183,7 @@ export async function createSale(data: {
         action: "SELL",
         entity: "SALE",
         entityId: sale._id.toString(),
-        description: `Vehicle sold for Rs. ${data.salePrice}`,
+        description: `Vehicle sold for ¥. ${data.salePrice}`,
         after: {
           vehicleId: data.vehicleId,
           saleType: data.saleType,
@@ -226,7 +227,7 @@ export async function createSale(data: {
           action: "PAYMENT_CREATE",
           entity: "PAYMENT",
           entityId: payment._id.toString(),
-          description: `Payment of Rs. ${data.initialPayment.amount} added`,
+          description: `Payment of ¥. ${data.initialPayment.amount} added`,
           after: {
             saleId: sale._id.toString(),
             amount: data.initialPayment.amount,
@@ -322,6 +323,10 @@ export async function getSales(searchParams: URLSearchParams) {
     const requestedType = searchParams.get("saleType") || "ALL";
 
     const filter: Record<string, unknown> = {};
+    const saleIdParam = searchParams.get("saleId");
+    if (saleIdParam && mongoose.isValidObjectId(saleIdParam)) {
+      filter._id = new mongoose.Types.ObjectId(saleIdParam);
+    }
 
     if (requestedType === "CUSTOMER" || requestedType === "AUCTION") {
       filter.saleType = requestedType;
@@ -372,7 +377,7 @@ export async function getSales(searchParams: URLSearchParams) {
             let: { saleId: "$_id" },
             pipeline: [
               { $match: { $expr: { $eq: ["$saleId", "$$saleId"] } } },
-              { $group: { _id: null, total: { $sum: "$amount" } } },
+              { $group: { _id: null, total: { $sum: SIGNED_AMOUNT } } },
             ],
             as: "paymentSummary",
           },
@@ -405,12 +410,7 @@ export async function getSales(searchParams: URLSearchParams) {
 
     const paymentTotals = await Payment.aggregate([
       { $match: { saleId: { $in: saleIds } } },
-      {
-        $group: {
-          _id: "$saleId",
-          totalPaid: { $sum: "$amount" },
-        },
-      },
+      { $group: { _id: "$saleId", totalPaid: { $sum: SIGNED_AMOUNT } } },
     ]);
 
     const paymentMap = new Map(
@@ -490,7 +490,7 @@ export async function returnSale(
 
       const paid = await Payment.aggregate([
         { $match: { saleId: sale._id } },
-        { $group: { _id: null, total: { $sum: "$amount" } } },
+        { $group: { _id: null, total: { $sum: SIGNED_AMOUNT } } },
       ]).session(session);
       const totalPaid: number = paid[0]?.total ?? 0;
 
@@ -513,7 +513,7 @@ export async function returnSale(
         action: "RETURN",
         entity: "SALE",
         entityId: sale._id.toString(),
-        description: `Sale returned, Rs. ${data.refundAmount} refunded of Rs. ${totalPaid} received`,
+        description: `Sale returned, ¥. ${data.refundAmount} refunded of ¥. ${totalPaid} received`,
         after: {
           status: "RETURNED",
           refundAmount: data.refundAmount,

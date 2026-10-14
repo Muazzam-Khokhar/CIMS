@@ -1,609 +1,384 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-import {
-  CalendarDays,
-  CarFront,
-  CircleDollarSign,
-  FileBarChart,
-  RefreshCw,
-  TrendingDown,
-  TrendingUp,
-  Wallet,
-} from "lucide-react";
+import { CarFront } from "lucide-react";
 import { toast } from "sonner";
+import { formatDate, formatMoney } from "@/lib/format";
 
-type ReportSummary = {
-  totalSales: number;
-  totalPayments: number;
-  totalOutstanding: number;
-  totalVehicleExpenses: number;
-  totalGeneralExpenses: number;
-  grossVehicleProfit: number;
-  businessNetProfit: number;
-  salesCount: number;
-  paymentCount: number;
-  vehicleExpenseCount: number;
-  generalExpenseCount: number;
-};
+type Preset = "this_month" | "last_month" | "last_3" | "this_year" | "custom";
 
-type Sale = {
-  _id: string;
-  vehicleId: {
-    _id: string;
-    name: string;
-    model: string;
-    year: number;
-    color?: string;
-    chassisNumber: string;
-    registrationNumber?: string;
-    purchasePrice?: number;
+type Report = {
+  summary: {
+    salesCount: number;
+    salesTotal: number;
+    carsCost: number;
+    carExpensesOnSold: number;
+    grossProfit: number;
+    shopExpenses: number;
+    netProfit: number;
+    received: number;
+    refunded: number;
+    netReceived: number;
+    outstanding: number;
+    returnsCount: number;
+    returnsRefunded: number;
   };
-  saleType: "CUSTOMER" | "AUCTION";
-  salePrice: number;
-  saleDate: string;
+  byMethod: { method: string; total: number }[];
+  shopExpenses: { title: string; total: number; count: number }[];
+  sold: {
+    saleId: string;
+    vehicle: { name?: string; model?: string; chassisNumber?: string };
+    saleType: "CUSTOMER" | "AUCTION";
+    saleDate: string;
+    purchasePrice: number;
+    carExpenses: number;
+    cost: number;
+    salePrice: number;
+    profit: number;
+    remaining: number;
+  }[];
 };
 
-type Payment = {
-  _id: string;
-  saleId: string;
-  amount: number;
-  paymentDate: string;
-  paymentMethod: "CASH" | "BANK" | "ONLINE" | "OTHER";
+const PRESETS: [Preset, string][] = [
+  ["this_month", "This month"],
+  ["last_month", "Last month"],
+  ["last_3", "Last 3 months"],
+  ["this_year", "This year"],
+  ["custom", "Pick dates"],
+];
+
+const METHOD_LABEL: Record<string, string> = {
+  CASH: "Cash",
+  BANK: "Bank transfer",
+  ONLINE: "Online / mobile app",
+  OTHER: "Other",
 };
 
-type VehicleExpense = {
-  _id: string;
-  vehicleId: string;
-  title: string;
-  amount: number;
-  expenseDate: string;
-};
+const pad = (n: number) => String(n).padStart(2, "0");
+const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-type GeneralExpense = {
-  _id: string;
-  title: string;
-  amount: number;
-  expenseDate: string;
-};
+function rangeFor(preset: Preset) {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
 
-type ProfitabilityItem = {
-  saleId: string;
-  vehicle: {
-    _id: string;
-    name?: string;
-    model?: string;
-    year?: number;
-    chassisNumber?: string;
-    registrationNumber?: string;
-  };
-  purchasePrice: number;
-  vehicleExpenses: number;
-  investment: number;
-  salePrice: number;
-  profit: number;
-  saleDate: string;
-};
-
-type ReportData = {
-  period: {
-    from: string | null;
-    to: string | null;
-  };
-  summary: ReportSummary;
-  sales: Sale[];
-  payments: Payment[];
-  vehicleExpenses: VehicleExpense[];
-  generalExpenses: GeneralExpense[];
-  profitability: ProfitabilityItem[];
-};
-
-function getDefaultFromDate() {
-  const date = new Date();
-  date.setMonth(date.getMonth() - 1);
-
-  return date.toISOString().split("T")[0];
-}
-
-function getToday() {
-  return new Date().toISOString().split("T")[0];
-}
-
-function formatPrice(value: number) {
-  return `Rs. ${Number(value || 0).toLocaleString("en-PK")}`;
-}
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("en-PK", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function formatMethod(
-  method: Payment["paymentMethod"],
-) {
-  switch (method) {
-    case "CASH":
-      return "Cash";
-    case "BANK":
-      return "Bank";
-    case "ONLINE":
-      return "Online";
-    case "OTHER":
-      return "Other";
+  switch (preset) {
+    case "this_month":
+      return { from: ymd(new Date(y, m, 1)), to: ymd(now) };
+    case "last_month":
+      return { from: ymd(new Date(y, m - 1, 1)), to: ymd(new Date(y, m, 0)) };
+    case "last_3":
+      return { from: ymd(new Date(y, m - 2, 1)), to: ymd(now) };
+    case "this_year":
+      return { from: ymd(new Date(y, 0, 1)), to: ymd(now) };
+    default:
+      return { from: "", to: "" };
   }
 }
 
 export default function ReportsPage() {
-  const [from, setFrom] = useState(getDefaultFromDate());
-  const [to, setTo] = useState(getToday());
+  const initial = rangeFor("this_month");
 
-  const [report, setReport] = useState<ReportData | null>(null);
+  const [preset, setPreset] = useState<Preset>("this_month");
+  const [from, setFrom] = useState(initial.from);
+  const [to, setTo] = useState(initial.to);
+  const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadReport = useCallback(
-    async (fromDate = from, toDate = to) => {
-      if (fromDate && toDate && fromDate > toDate) {
-        toast.error(
-          "The From date cannot be after the To date.",
-        );
-        return;
-      }
-
-      try {
-        setLoading(true);
-
-        const params = new URLSearchParams();
-
-        if (fromDate) {
-          params.set("from", fromDate);
-        }
-
-        if (toDate) {
-          params.set("to", toDate);
-        }
-
-        const response = await fetch(
-          `/api/reports?${params.toString()}`,
-        );
-
-        const result = await response.json();
-
-        if (!response.ok || !result.success) {
-          throw new Error(
-            result.message || "Failed to load report",
-          );
-        }
-
-        setReport(result.data);
-      } catch (error) {
-        console.error("Load report error:", error);
-
-        setReport(null);
-
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : "Failed to load report",
-        );
-      } finally {
-        setLoading(false);
-      }
-    },
-    [from, to],
-  );
-
-  useEffect(() => {
-    loadReport();
-  }, [loadReport]);
-
-  const summary = report?.summary ?? {
-    totalSales: 0,
-    totalPayments: 0,
-    totalOutstanding: 0,
-    totalVehicleExpenses: 0,
-    totalGeneralExpenses: 0,
-    grossVehicleProfit: 0,
-    businessNetProfit: 0,
-    salesCount: 0,
-    paymentCount: 0,
-    vehicleExpenseCount: 0,
-    generalExpenseCount: 0,
+  const choose = (p: Preset) => {
+    setPreset(p);
+    if (p !== "custom") {
+      const r = rangeFor(p);
+      setFrom(r.from);
+      setTo(r.to);
+    }
   };
 
-  const totalExpenses = useMemo(() => {
-    return (
-      (summary?.totalVehicleExpenses ?? 0) +
-      (summary?.totalGeneralExpenses ?? 0)
-    );
-  }, [summary]);
+  const load = useCallback(async () => {
+    if (!from || !to || from > to) return;
+
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/reports?from=${from}&to=${to}`, { cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message);
+      setReport(json.data);
+    } catch (e) {
+      setReport(null);
+      toast.error(e instanceof Error ? e.message : "Failed to load report");
+    } finally {
+      setLoading(false);
+    }
+  }, [from, to]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const bySaleType = useMemo(() => {
+    const out = {
+      CUSTOMER: { label: "Sold to customers", count: 0, total: 0, profit: 0 },
+      AUCTION: { label: "Sold at auction", count: 0, total: 0, profit: 0 },
+    };
+    for (const s of report?.sold ?? []) {
+      out[s.saleType].count += 1;
+      out[s.saleType].total += s.salePrice;
+      out[s.saleType].profit += s.profit;
+    }
+    return Object.values(out);
+  }, [report]);
+
+  const s = report?.summary;
+  const dateError = from && to && from > to;
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
-              <FileBarChart className="h-5 w-5" />
-            </div>
-
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">
-                Reports
-              </h1>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Business financial performance and profitability.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => loadReport()}
-          disabled={loading}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <RefreshCw
-            className={`h-4 w-4 ${
-              loading ? "animate-spin" : ""
-            }`}
-          />
-          Refresh Report
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Reports</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          How your business did in the time you choose.
+        </p>
       </div>
 
-      {/* Date Filters */}
+      {/* Period */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">
-              From Date
-            </label>
+        <div className="flex flex-wrap gap-2">
+          {PRESETS.map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => choose(value)}
+              className={`h-9 rounded-xl px-4 text-sm font-medium transition ${
+                preset === value
+                  ? "bg-slate-900 text-white"
+                  : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
-            <div className="relative">
-              <CalendarDays className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
-
+        {preset === "custom" && (
+          <div className="mt-4 grid max-w-md gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">From</label>
               <input
                 type="date"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
-                className="h-11 rounded-xl border border-slate-200 bg-white pr-3 pl-10 text-sm text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">
-              To Date
-            </label>
-
-            <div className="relative">
-              <CalendarDays className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
-
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">To</label>
               <input
                 type="date"
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
-                className="h-11 rounded-xl border border-slate-200 bg-white pr-3 pl-10 text-sm text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400"
               />
             </div>
           </div>
+        )}
 
-          <button
-            type="button"
-            onClick={() => loadReport(from, to)}
-            disabled={loading}
-            className="h-11 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading ? "Generating..." : "Generate Report"}
-          </button>
-        </div>
-
-        {report?.period && (
+        {dateError && (
+          <p className="mt-3 text-xs text-red-600">The “From” date must be before the “To” date.</p>
+        )}
+        {from && to && !dateError && (
           <p className="mt-3 text-xs text-slate-400">
-            Report period:{" "}
-            <span className="font-medium text-slate-500">
-              {report.period.from || "All dates"}
-            </span>{" "}
-            to{" "}
-            <span className="font-medium text-slate-500">
-              {report.period.to || "All dates"}
-            </span>
+            Showing {formatDate(from)} to {formatDate(to)}
           </p>
         )}
       </div>
 
-      {loading && !report ? (
-        <div className="flex h-72 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="text-center">
-            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-sky-600" />
-
-            <p className="mt-3 text-sm text-slate-500">
-              Generating report...
-            </p>
-          </div>
-        </div>
-      ) : !report ? (
-        <div className="flex h-72 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <p className="text-sm text-slate-500">
-            No report data available.
-          </p>
+      {!report || !s ? (
+        <div className="flex h-60 items-center justify-center rounded-2xl border border-slate-200 bg-white">
+          {loading ? (
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-sky-600" />
+          ) : (
+            <p className="text-sm text-slate-500">No report to show.</p>
+          )}
         </div>
       ) : (
-        <>
-          {/* KPI Cards */}
+        <div className={`space-y-6 transition-opacity ${loading ? "opacity-60" : ""}`}>
+          {/* Headline numbers */}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard
-              label="Total Sales"
-              value={formatPrice(summary?.totalSales ?? 0)}
-              description={`${summary?.salesCount ?? 0} sold vehicle${
-                summary?.salesCount === 1 ? "" : "s"
-              }`}
-              icon={<TrendingUp className="h-5 w-5" />}
-              iconClass="bg-blue-50 text-blue-600"
+            <Card
+              label="Your profit"
+              value={formatMoney(s.netProfit)}
+              note="After shop expenses"
+              valueClass={s.netProfit >= 0 ? "text-emerald-600" : "text-red-600"}
             />
-
-            <SummaryCard
-              label="Total Received"
-              value={formatPrice(summary?.totalPayments ?? 0)}
-              description={`${summary?.paymentCount ?? 0} payment${
-                summary?.paymentCount === 1 ? "" : "s"
-              }`}
-              icon={<CircleDollarSign className="h-5 w-5" />}
-              iconClass="bg-emerald-50 text-emerald-600"
+            <Card
+              label="Cars sold"
+              value={String(s.salesCount)}
+              note={`Worth ${formatMoney(s.salesTotal)}`}
             />
-
-            <SummaryCard
-              label="Outstanding"
-              value={formatPrice(
-                summary?.totalOutstanding ?? 0,
-              )}
-              description="Current receivable"
-              icon={<Wallet className="h-5 w-5" />}
-              iconClass="bg-amber-50 text-amber-600"
+            <Card
+              label="Money received"
+              value={formatMoney(s.netReceived)}
+              note={s.refunded > 0 ? `After returning ${formatMoney(s.refunded)}` : "From customers"}
             />
-
-            <SummaryCard
-              label="Business Net Profit"
-              value={formatPrice(
-                summary?.businessNetProfit ?? 0,
-              )}
-              description="After general expenses"
-              icon={
-                (summary?.businessNetProfit ?? 0) >= 0 ? (
-                  <TrendingUp className="h-5 w-5" />
-                ) : (
-                  <TrendingDown className="h-5 w-5" />
-                )
-              }
-              iconClass={
-                (summary?.businessNetProfit ?? 0) >= 0
-                  ? "bg-emerald-50 text-emerald-600"
-                  : "bg-red-50 text-red-600"
-              }
+            <Card
+              label="Customers still owe"
+              value={formatMoney(s.outstanding)}
+              note="On cars sold in this time"
+              valueClass={s.outstanding > 0 ? "text-amber-600" : undefined}
             />
           </div>
 
-          {/* Financial Breakdown */}
+          {s.returnsCount > 0 && (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {s.returnsCount} sale{s.returnsCount === 1 ? " was" : "s were"} cancelled in this time and{" "}
+              {formatMoney(s.returnsRefunded)} was refunded. Those cars are not counted as sold.
+            </p>
+          )}
+
+          {/* Profit + shop expenses */}
           <div className="grid gap-5 lg:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-5">
-                <h2 className="text-base font-semibold text-slate-900">
-                  Profit Breakdown
-                </h2>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  Revenue and vehicle profitability.
-                </p>
-              </div>
-
+            <Panel title="How your profit is made" subtitle="Cars sold in this time">
               <div className="space-y-3">
-                <ReportRow
-                  label="Sales Revenue"
-                  value={formatPrice(summary.totalSales)}
-                />
-
-                <ReportRow
-                  label="Vehicle Expenses"
-                  value={formatPrice(
-                    summary.totalVehicleExpenses,
-                  )}
-                />
-
+                <Line label="Cars sold for" value={s.salesTotal} />
+                <Line label="Minus: what those cars cost to buy" value={-s.carsCost} />
+                <Line label="Minus: repairs and expenses on those cars" value={-s.carExpensesOnSold} />
                 <div className="border-t border-slate-100 pt-3">
-                  <ReportRow
-                    label="Gross Vehicle Profit"
-                    value={formatPrice(
-                      summary.grossVehicleProfit,
-                    )}
-                    strong
-                    valueClass={
-                      summary.grossVehicleProfit >= 0
-                        ? "text-emerald-600"
-                        : "text-red-600"
-                    }
-                  />
+                  <Line label="Profit on cars" value={s.grossProfit} strong tone />
                 </div>
-
-                <ReportRow
-                  label="General Expenses"
-                  value={formatPrice(
-                    summary.totalGeneralExpenses,
-                  )}
-                />
-
-                <div className="border-t border-slate-100 pt-3">
-                  <ReportRow
-                    label="Business Net Profit"
-                    value={formatPrice(
-                      summary.businessNetProfit,
-                    )}
-                    strong
-                    valueClass={
-                      summary.businessNetProfit >= 0
-                        ? "text-emerald-600"
-                        : "text-red-600"
-                    }
-                  />
+                <Line label="Minus: shop and office expenses" value={-s.shopExpenses} />
+                <div className="rounded-xl bg-slate-50 px-4 py-3">
+                  <Line label="Your profit" value={s.netProfit} strong tone />
                 </div>
               </div>
-            </div>
+              <p className="mt-4 text-xs text-slate-400">
+                Money spent on cars you haven&apos;t sold yet is not a loss. It is counted when the car is sold.
+                Money from partners or loans is never counted as profit.
+              </p>
+            </Panel>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-5">
-                <h2 className="text-base font-semibold text-slate-900">
-                  Expense Breakdown
-                </h2>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  Vehicle-specific vs business-level expenses.
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                <ExpenseBreakdownRow
-                  icon={<CarFront className="h-4 w-4" />}
-                  label="Vehicle Expenses"
-                  count={summary.vehicleExpenseCount}
-                  amount={summary.totalVehicleExpenses}
-                  total={totalExpenses}
-                />
-
-                <ExpenseBreakdownRow
-                  icon={<Wallet className="h-4 w-4" />}
-                  label="General Expenses"
-                  count={summary.generalExpenseCount}
-                  amount={summary.totalGeneralExpenses}
-                  total={totalExpenses}
-                />
-
-                <div className="rounded-xl bg-slate-50 px-4 py-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-slate-600">
-                      Total Expenses
-                    </span>
-
-                    <span className="text-base font-bold text-slate-900">
-                      {formatPrice(totalExpenses)}
-                    </span>
-                  </div>
+            <Panel title="Where shop money went" subtitle="Shop and office expenses">
+              {report.shopExpenses.length === 0 ? (
+                <p className="py-8 text-center text-sm text-slate-500">No shop expenses in this time.</p>
+              ) : (
+                <div className="space-y-4">
+                  {report.shopExpenses.map((e) => {
+                    const pct = s.shopExpenses > 0 ? Math.round((e.total / s.shopExpenses) * 100) : 0;
+                    return (
+                      <div key={e.title}>
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                          <span className="truncate text-slate-700">
+                            {e.title}
+                            <span className="ml-2 text-xs text-slate-400">
+                              {e.count}×
+                            </span>
+                          </span>
+                          <span className="shrink-0 font-semibold text-slate-900">
+                            {formatMoney(e.total)}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-full rounded-full bg-sky-500" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
-            </div>
+              )}
+            </Panel>
           </div>
 
-          {/* Vehicle Profitability */}
+          {/* Payment methods + sale type */}
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Panel title="How customers paid" subtitle="Payments in this time, after returns">
+              {report.byMethod.length === 0 ? (
+                <p className="py-6 text-center text-sm text-slate-500">No payments in this time.</p>
+              ) : (
+                <div className="space-y-3">
+                  {report.byMethod.map((m) => (
+                    <Line key={m.method} label={METHOD_LABEL[m.method] ?? m.method} value={m.total} />
+                  ))}
+                </div>
+              )}
+            </Panel>
+
+            <Panel title="Customers and auctions" subtitle="Cars sold in this time">
+              <div className="space-y-3">
+                {bySaleType.map((t) => (
+                  <div key={t.label} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{t.label}</p>
+                      <p className="text-xs text-slate-500">
+                        {t.count} car{t.count === 1 ? "" : "s"} · {formatMoney(t.total)}
+                      </p>
+                    </div>
+                    <p className={`text-sm font-bold ${t.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                      {formatMoney(t.profit)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          </div>
+
+          {/* Cars sold */}
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-5 py-4">
-              <div>
-                <h2 className="text-base font-semibold text-slate-900">
-                  Vehicle Profitability
-                </h2>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  Investment and realized profit for vehicles sold
-                  in the selected period.
-                </p>
-              </div>
+              <h2 className="text-base font-semibold text-slate-900">Cars sold</h2>
+              <p className="mt-0.5 text-sm text-slate-500">Profit on each car</p>
             </div>
 
-            {report.profitability.length === 0 ? (
-              <div className="flex h-48 items-center justify-center px-5 text-center">
-                <p className="text-sm text-slate-500">
-                  No sold vehicles found for this period.
-                </p>
-              </div>
+            {report.sold.length === 0 ? (
+              <p className="px-5 py-12 text-center text-sm text-slate-500">
+                No cars were sold in this time.
+              </p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[950px]">
+                <table className="w-full min-w-[900px]">
                   <thead className="border-b border-slate-200 bg-slate-50">
-                    <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      <th className="px-5 py-4">
-                        Vehicle
-                      </th>
-                      <th className="px-5 py-4">
-                        Purchase
-                      </th>
-                      <th className="px-5 py-4">
-                        Vehicle Expenses
-                      </th>
-                      <th className="px-5 py-4">
-                        Investment
-                      </th>
-                      <th className="px-5 py-4">
-                        Sale
-                      </th>
-                      <th className="px-5 py-4">
-                        Profit
-                      </th>
-                      <th className="px-5 py-4">
-                        Sale Date
-                      </th>
+                    <tr className="text-left text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                      <th className="px-5 py-4">Car</th>
+                      <th className="px-5 py-4">Sold on</th>
+                      <th className="px-5 py-4">Total cost</th>
+                      <th className="px-5 py-4">Sold for</th>
+                      <th className="px-5 py-4">Profit</th>
+                      <th className="px-5 py-4">Customer owes</th>
                     </tr>
                   </thead>
-
                   <tbody className="divide-y divide-slate-100">
-                    {report.profitability.map((item) => (
-                      <tr
-                        key={item.saleId}
-                        className="transition hover:bg-slate-50/70"
-                      >
+                    {report.sold.map((c) => (
+                      <tr key={c.saleId} className="hover:bg-slate-50/70">
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
                               <CarFront className="h-5 w-5" />
                             </div>
-
                             <div>
                               <p className="font-semibold text-slate-900">
-                                {item.vehicle?.name}{" "}
-                                {item.vehicle?.model}
+                                {c.vehicle.name} {c.vehicle.model}
                               </p>
-
                               <p className="text-xs text-slate-500">
-                                {item.vehicle?.year} ·{" "}
-                                {item.vehicle?.chassisNumber}
+                                {c.saleType === "AUCTION" ? "Auction" : "Customer"} · {c.vehicle.chassisNumber || "—"}
                               </p>
                             </div>
                           </div>
                         </td>
-
-                        <td className="px-5 py-4 text-sm text-slate-700">
-                          {formatPrice(item.purchasePrice)}
+                        <td className="px-5 py-4 text-sm text-slate-600">{formatDate(c.saleDate)}</td>
+                        <td className="px-5 py-4">
+                          <p className="text-sm font-medium text-slate-900">{formatMoney(c.cost)}</p>
+                          <p className="text-xs text-slate-400">
+                            Bought {formatMoney(c.purchasePrice)}
+                            {c.carExpenses > 0 && ` + repairs ${formatMoney(c.carExpenses)}`}
+                          </p>
                         </td>
-
-                        <td className="px-5 py-4 text-sm text-slate-700">
-                          {formatPrice(
-                            item.vehicleExpenses,
-                          )}
-                        </td>
-
                         <td className="px-5 py-4 text-sm font-semibold text-slate-900">
-                          {formatPrice(item.investment)}
+                          {formatMoney(c.salePrice)}
                         </td>
-
-                        <td className="px-5 py-4 text-sm font-semibold text-slate-900">
-                          {formatPrice(item.salePrice)}
+                        <td className={`px-5 py-4 text-sm font-bold ${c.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          {formatMoney(c.profit)}
                         </td>
-
-                        <td
-                          className={`px-5 py-4 text-sm font-bold ${
-                            item.profit >= 0
-                              ? "text-emerald-600"
-                              : "text-red-600"
-                          }`}
-                        >
-                          {formatPrice(item.profit)}
-                        </td>
-
-                        <td className="px-5 py-4 text-sm text-slate-600">
-                          {formatDate(item.saleDate)}
+                        <td className={`px-5 py-4 text-sm ${c.remaining > 0 ? "font-semibold text-amber-600" : "text-slate-400"}`}>
+                          {c.remaining > 0 ? formatMoney(c.remaining) : "Paid"}
                         </td>
                       </tr>
                     ))}
@@ -612,334 +387,50 @@ export default function ReportsPage() {
               </div>
             )}
           </div>
-
-          {/* Sales + Payments */}
-          <div className="grid gap-5 lg:grid-cols-2">
-            {/* Recent Sales */}
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-200 px-5 py-4">
-                <h2 className="text-base font-semibold text-slate-900">
-                  Sales in Period
-                </h2>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  {report.sales.length} sale
-                  {report.sales.length !== 1 ? "s" : ""}
-                </p>
-              </div>
-
-              <div className="max-h-[420px] overflow-y-auto">
-                {report.sales.length === 0 ? (
-                  <div className="flex h-40 items-center justify-center px-5 text-sm text-slate-500">
-                    No sales found.
-                  </div>
-                ) : (
-                  <div className="divide-y divide-slate-100">
-                    {report.sales.map((sale) => (
-                      <div
-                        key={sale._id}
-                        className="px-5 py-4"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">
-                              {sale.vehicleId?.name}{" "}
-                              {sale.vehicleId?.model}
-                            </p>
-
-                            <p className="mt-1 text-xs text-slate-500">
-                              {formatDate(sale.saleDate)} ·{" "}
-                              {sale.saleType === "CUSTOMER"
-                                ? "Customer"
-                                : "Auction"}
-                            </p>
-                          </div>
-
-                          <p className="text-sm font-bold text-slate-900">
-                            {formatPrice(sale.salePrice)}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Payments */}
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-200 px-5 py-4">
-                <h2 className="text-base font-semibold text-slate-900">
-                  Payments in Period
-                </h2>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  {report.payments.length} payment
-                  {report.payments.length !== 1 ? "s" : ""}
-                </p>
-              </div>
-
-              <div className="max-h-[420px] overflow-y-auto">
-                {report.payments.length === 0 ? (
-                  <div className="flex h-40 items-center justify-center px-5 text-sm text-slate-500">
-                    No payments found.
-                  </div>
-                ) : (
-                  <div className="divide-y divide-slate-100">
-                    {report.payments.map((payment) => (
-                      <div
-                        key={payment._id}
-                        className="px-5 py-4"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">
-                              {formatMethod(
-                                payment.paymentMethod,
-                              )}
-                            </p>
-
-                            <p className="mt-1 text-xs text-slate-500">
-                              {formatDate(payment.paymentDate)}
-                            </p>
-                          </div>
-
-                          <p className="text-sm font-bold text-emerald-600">
-                            {formatPrice(payment.amount)}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Expense Records */}
-          <div className="grid gap-5 lg:grid-cols-2">
-            <ExpenseList
-              title="Vehicle Expense Records"
-              description={`${report.vehicleExpenses.length} record${
-                report.vehicleExpenses.length !== 1
-                  ? "s"
-                  : ""
-              }`}
-              items={report.vehicleExpenses.map((expense) => ({
-                id: expense._id,
-                title: expense.title,
-                amount: expense.amount,
-                date: expense.expenseDate,
-              }))}
-            />
-
-            <ExpenseList
-              title="General Expense Records"
-              description={`${report.generalExpenses.length} record${
-                report.generalExpenses.length !== 1
-                  ? "s"
-                  : ""
-              }`}
-              items={report.generalExpenses.map((expense) => ({
-                id: expense._id,
-                title: expense.title,
-                amount: expense.amount,
-                date: expense.expenseDate,
-              }))}
-            />
-          </div>
-        </>
+        </div>
       )}
     </div>
   );
 }
 
-function SummaryCard({
-  label,
-  value,
-  description,
-  icon,
-  iconClass,
-}: {
-  label: string;
-  value: string;
-  description: string;
-  icon: React.ReactNode;
-  iconClass: string;
-}) {
+/* ----------------------------- small parts ----------------------------- */
+
+function Card({
+  label, value, note, valueClass = "text-slate-900",
+}: { label: string; value: string; note: string; valueClass?: string }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm text-slate-500">
-            {label}
-          </p>
-
-          <p className="mt-2 text-2xl font-bold text-slate-900">
-            {value}
-          </p>
-
-          <p className="mt-1 text-xs text-slate-400">
-            {description}
-          </p>
-        </div>
-
-        <div
-          className={`rounded-xl p-3 ${iconClass}`}
-        >
-          {icon}
-        </div>
-      </div>
+      <p className="text-sm text-slate-500">{label}</p>
+      <p className={`mt-2 text-2xl font-bold ${valueClass}`}>{value}</p>
+      <p className="mt-1 text-xs text-slate-400">{note}</p>
     </div>
   );
 }
 
-function ReportRow({
-  label,
-  value,
-  strong = false,
-  valueClass = "text-slate-900",
-}: {
-  label: string;
-  value: string;
-  strong?: boolean;
-  valueClass?: string;
-}) {
+function Panel({
+  title, subtitle, children,
+}: { title: string; subtitle: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4">
+        <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+        <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Line({
+  label, value, strong = false, tone = false,
+}: { label: string; value: number; strong?: boolean; tone?: boolean }) {
+  const color = tone ? (value >= 0 ? "text-emerald-600" : "text-red-600") : "text-slate-900";
   return (
     <div className="flex items-center justify-between gap-4">
-      <span
-        className={`text-sm ${
-          strong
-            ? "font-semibold text-slate-800"
-            : "text-slate-500"
-        }`}
-      >
-        {label}
+      <span className={`text-sm ${strong ? "font-semibold text-slate-800" : "text-slate-500"}`}>{label}</span>
+      <span className={`text-sm ${strong ? "font-bold" : "font-semibold"} ${color}`}>
+        {formatMoney(value)}
       </span>
-
-      <span
-        className={`text-sm ${
-          strong ? "font-bold" : "font-semibold"
-        } ${valueClass}`}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function ExpenseBreakdownRow({
-  icon,
-  label,
-  count,
-  amount,
-  total,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  count: number;
-  amount: number;
-  total: number;
-}) {
-  const percentage =
-    total > 0 ? Math.round((amount / total) * 100) : 0;
-
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-            {icon}
-          </div>
-
-          <div>
-            <p className="text-sm font-semibold text-slate-800">
-              {label}
-            </p>
-
-            <p className="text-xs text-slate-400">
-              {count} record{count !== 1 ? "s" : ""}
-            </p>
-          </div>
-        </div>
-
-        <div className="text-right">
-          <p className="text-sm font-bold text-slate-900">
-            {formatPrice(amount)}
-          </p>
-
-          <p className="text-xs text-slate-400">
-            {percentage}%
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-        <div
-          className="h-full rounded-full bg-sky-500 transition-all"
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ExpenseList({
-  title,
-  description,
-  items,
-}: {
-  title: string;
-  description: string;
-  items: {
-    id: string;
-    title: string;
-    amount: number;
-    date: string;
-  }[];
-}) {
-  return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 px-5 py-4">
-        <h2 className="text-base font-semibold text-slate-900">
-          {title}
-        </h2>
-
-        <p className="mt-1 text-sm text-slate-500">
-          {description}
-        </p>
-      </div>
-
-      <div className="max-h-[350px] overflow-y-auto">
-        {items.length === 0 ? (
-          <div className="flex h-40 items-center justify-center px-5 text-sm text-slate-500">
-            No expense records found.
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between gap-4 px-5 py-4"
-              >
-                <div>
-                  <p className="text-sm font-medium text-slate-800">
-                    {item.title}
-                  </p>
-
-                  <p className="mt-1 text-xs text-slate-400">
-                    {formatDate(item.date)}
-                  </p>
-                </div>
-
-                <p className="text-sm font-semibold text-slate-900">
-                  {formatPrice(item.amount)}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import { useConfirm } from "@/components/confirm-provider";
 import { ReturnSaleModal } from "@/components/ReturnSaleModal";
+import Link from "next/link";
 
 type Sale = {
   _id: string;
@@ -51,6 +52,7 @@ type Payment = {
   saleId: {
     _id: string;
   };
+  type?: "RECEIVED" | "REFUND";
   amount: number;
   paymentDate: string;
   paymentMethod: "CASH" | "BANK" | "ONLINE" | "OTHER";
@@ -67,11 +69,11 @@ type SaleTotals = {
 const todayString = () => new Date().toISOString().split("T")[0];
 
 const formatPrice = (value: number) => {
-  return `Rs. ${value.toLocaleString("en-PK")}`;
+  return `¥. ${value.toLocaleString("en-JP")}`;
 };
 
 const formatDate = (value: string) => {
-  return new Date(value).toLocaleDateString("en-PK", {
+  return new Date(value).toLocaleDateString("en-JP", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -764,6 +766,14 @@ export default function SalesPage() {
                       {showPaymentForm ? "Close Payment Form" : "Add Payment"}
                     </button>
                   )}
+                  {!isReturned && selectedSale.totalPaid > 0 && (
+                    <Link
+                      href={`/payments?returnSale=${selectedSale._id}`}
+                      className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                    >
+                      Return payment
+                    </Link>
+                  )}
                 </div>
 
                 {/* Add / Edit Payment Form */}
@@ -919,13 +929,14 @@ export default function SalesPage() {
                         >
                           <div>
                             <div className="flex items-center gap-2">
-                              <p className="text-sm font-semibold text-slate-900">
-                                {formatPrice(payment.amount)}
-                              </p>
-
-                              <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
-                                {formatPaymentMethod(payment.paymentMethod)}
-                              </span>
+                            <p className={`text-sm font-semibold ${payment.type === "REFUND" ? "text-red-600" : "text-slate-900"}`}>
+                              {payment.type === "REFUND" ? "−" : ""}{formatPrice(payment.amount)}
+                            </p>
+                            <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+                              {payment.type === "REFUND"
+                                ? "Returned to customer"
+                                : formatPaymentMethod(payment.paymentMethod)}
+                            </span>
                             </div>
 
                             <p className="mt-1 text-xs text-slate-500">
@@ -941,14 +952,16 @@ export default function SalesPage() {
 
                           {!isReturned && (
                             <div className="flex gap-1">
-                              <button
-                                type="button"
-                                onClick={() => startEditPayment(payment)}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                                title="Edit payment"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </button>
+                              {payment.type !== "REFUND" && (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditPayment(payment)}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                  title="Edit payment"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                              )}
 
                               <button
                                 type="button"

@@ -16,6 +16,7 @@ export type NavItem = {
   href: string;
   icon: LucideIcon;
   description: string;
+  exact?: boolean;
   children?: NavItem[];
 };
 
@@ -71,29 +72,14 @@ export const navigation: NavItem[] = [
     description: "Money in and out",
   },
   {
-    name: "Finance",
+    name: "Money",
     href: "/finance",
     icon: BadgeJapaneseYen,
-    description: "Finance Management",
+    description: "Where your money came from and went",
     children: [
-      {
-        name: "Partners",
-        href: "/finance/partners",
-        icon: CarFront,
-        description: "Manage partners",
-      },
-      {
-        name: "Loans",
-        href: "/finance/loans",
-        icon: Receipt,
-        description: "Manage loans",
-      },
-      {
-        name: "Transcations",
-        href: "/finance/transactions",
-        icon: Receipt,
-        description: "Manage transactions",
-      },
+      { name: "Overview", href: "/finance",exact: true, icon: BarChart3, description: "Money summary" },
+      { name: "Partners", href: "/finance/partners", icon: Users, description: "People who invest with you" },
+      { name: "Loans", href: "/finance/loans", icon: Receipt, description: "Money borrowed or lent" },
     ],
   },
   {
@@ -111,9 +97,13 @@ export const settingsItem: NavItem = {
   description: "Workspace preferences",
 };
 
-export function isNavActive(pathname: string, href: string) {
-  if (href === "/") {
-    return pathname === "/";
+export function isNavActive(
+  pathname: string,
+  href: string,
+  exact = false,
+) {
+  if (href === "/" || exact) {
+    return pathname === href;
   }
 
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -122,19 +112,15 @@ export function isNavActive(pathname: string, href: string) {
 export function getPageMeta(pathname: string) {
   const allItems = [
     settingsItem,
-    ...navigation.flatMap((item) => [
-      item,
-      ...(item.children ?? []),
-    ]),
+    ...navigation.flatMap((item) => [item, ...(item.children ?? [])]),
   ];
 
-  const match = allItems.find((item) =>
-    isNavActive(pathname, item.href),
-  );
+  const match = allItems
+    .filter((item) => isNavActive(pathname, item.href, item.exact))
+    .sort((a, b) => b.href.length - a.href.length)[0];
 
   return {
     title: match?.name ?? "CIMS",
-    description:
-      match?.description ?? "Car inventory management",
+    description: match?.description ?? "Car inventory management",
   };
 }

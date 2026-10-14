@@ -135,7 +135,7 @@ function formatDate(value: string) {
 
   return Number.isNaN(date.getTime())
     ? "—"
-    : date.toLocaleDateString("en-PK", {
+    : date.toLocaleDateString("en-JP", {
         day: "2-digit",
         month: "short",
         year: "numeric",

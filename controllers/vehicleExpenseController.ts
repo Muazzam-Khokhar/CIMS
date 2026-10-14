@@ -95,7 +95,7 @@ export async function createVehicleExpense(
       action: "CREATE",
       entity: "VEHICLE_EXPENSE",
       entityId: expense._id.toString(),
-      description: `Vehicle expense "${expense.title}" of Rs. ${expense.amount} created`,
+      description: `Vehicle expense "${expense.title}" of ¥. ${expense.amount} created`,
       after: {
         vehicleId: data.vehicleId,
         title: expense.title,
@@ -403,7 +403,7 @@ export async function deleteVehicleExpense(id: string,actor: AuditActor) {
       action: "DELETE",
       entity: "VEHICLE_EXPENSE",
       entityId: expense._id.toString(),
-      description: `Vehicle expense "${expense.title}" of Rs. ${expense.amount} deleted`,
+      description: `Vehicle expense "${expense.title}" of ¥. ${expense.amount} deleted`,
       before: {
         vehicleId: before.vehicleId,
         title: before.title,

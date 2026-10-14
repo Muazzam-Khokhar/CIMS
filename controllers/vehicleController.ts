@@ -8,6 +8,8 @@ import { Types } from "mongoose";
 import VehicleExpense from "@/models/VehicleExpense";
 import Sale from "@/models/Sale";
 import Payment from "@/models/Payment";
+import { SIGNED_AMOUNT } from "@/lib/paymentTotals";
+
 type CreateVehicleData = {
   name: string;
   model: string;
@@ -222,7 +224,7 @@ export async function getVehicle(id: string) {
     if (sale) {
       const paymentTotals = await Payment.aggregate([
         { $match: { saleId: sale._id } },
-        { $group: { _id: null, total: { $sum: "$amount" } } },
+        { $group: { _id: null, total: { $sum: SIGNED_AMOUNT } } },
       ]);
  
       const totalPaid: number = paymentTotals[0]?.total ?? 0;

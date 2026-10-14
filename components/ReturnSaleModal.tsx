@@ -108,7 +108,7 @@ export function ReturnSaleModal({
             <div className="flex justify-between">
               <span className="text-slate-500">Amount received</span>
               <span className="font-semibold text-slate-900">
-                Rs. {totalPaid.toLocaleString("en-PK")}
+              ¥. {totalPaid.toLocaleString("en-JP")}
               </span>
             </div>
           </div>
