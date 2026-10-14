@@ -3,7 +3,6 @@ import mongoose, { Schema, Document, Model } from "mongoose";
 export interface IVehicle {
   name: string;
   model: string;
-  year: number;
   color: string;
   chassisNumber: string;
 
@@ -35,24 +34,16 @@ const vehicleSchema = new Schema<IVehicle>(
 
     model: {
       type: String,
-      required: true,
       trim: true,
-    },
-
-    year: {
-      type: Number,
-      required: true,
     },
 
     color: {
       type: String,
-      required: true,
       trim: true,
     },
 
     chassisNumber: {
       type: String,
-      required: true,
       trim: true,
       unique: true,
     },
@@ -73,11 +64,13 @@ const vehicleSchema = new Schema<IVehicle>(
 
     purchaseDate: {
       type: Date,
+      required: true,
     },
 
     purchasePrice: {
       type: Number,
       min: 0,
+      required: true,
     },
 
     location: {

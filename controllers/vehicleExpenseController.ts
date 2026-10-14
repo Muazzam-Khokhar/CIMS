@@ -172,7 +172,7 @@ export async function getVehicleExpenses(
           .populate({
             path: "vehicleId",
             select:
-              "name model year color chassisNumber registrationNumber purchasePrice status",
+              "name model color chassisNumber registrationNumber purchasePrice status",
           })
           .sort({
             expenseDate: -1,
@@ -233,7 +233,7 @@ export async function getVehicleExpense(id: string) {
       .populate({
         path: "vehicleId",
         select:
-          "name model year color chassisNumber registrationNumber purchasePrice status",
+          "name model color chassisNumber registrationNumber purchasePrice status",
       })
       .lean();
 

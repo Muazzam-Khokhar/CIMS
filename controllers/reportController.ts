@@ -12,7 +12,6 @@ type PopulatedVehicle = {
   _id: Types.ObjectId;
   name: string;
   model: string;
-  year: number;
   chassisNumber: string;
   registrationNumber?: string;
   purchasePrice?: number;
@@ -107,7 +106,7 @@ export async function getReports(query: ReportQuery) {
     })
       .populate<{ vehicleId: PopulatedVehicle | null }>({
         path: "vehicleId",
-        select: "name model year color chassisNumber registrationNumber purchasePrice purchaseDate",
+        select: "name model color chassisNumber registrationNumber purchasePrice purchaseDate",
       })
       .sort({ saleDate: -1 })
       .lean();
@@ -268,7 +267,6 @@ export async function getReports(query: ReportQuery) {
           _id: vehicle?._id,
           name: vehicle?.name,
           model: vehicle?.model,
-          year: vehicle?.year,
           chassisNumber: vehicle?.chassisNumber,
           registrationNumber:
             vehicle?.registrationNumber,

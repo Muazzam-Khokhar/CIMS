@@ -26,7 +26,6 @@ type Vehicle = {
   images: VehicleImage[];
   name: string;
   model: string;
-  year: number;
   color: string;
   chassisNumber: string;
   engineNumber?: string;
@@ -46,7 +45,6 @@ type StatusFilter = "ALL" | "AVAILABLE" | "SOLD" | "DISCARDED";
 type VehicleSortField =
   | "name"
   | "model"
-  | "year"
   | "purchasePrice"
   | "purchaseDate"
   | "createdAt";
@@ -202,6 +200,12 @@ export default function InventoryPage() {
 
     return `Rs. ${price.toLocaleString("en-PK")}`;
   };
+  const formatDate = (date?: string) => {
+    if(date === undefined || date === null){
+      return "-";
+    }
+    return date.split("T")[0];
+  }
 
   const getStatusLabel = (status: Vehicle["status"]) => {
     switch (status) {
@@ -480,32 +484,7 @@ export default function InventoryPage() {
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_25px_rgba(15,23,42,0.035)]">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">
-              Vehicles
-            </h2>
-
-            <p className="mt-0.5 text-xs text-slate-500">
-              {totalCount === 0
-                ? "No vehicles"
-                : `Showing ${
-                    (page - 1) * limit + 1
-                  }–${Math.min(
-                    page * limit,
-                    totalCount
-                  )} of ${totalCount}`}
-            </p>
-          </div>
-
-          {loading && (
-            <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
-              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-200 border-t-sky-600" />
-              Loading
-            </div>
-          )}
-        </div>
-
+        
         {loading && vehicles.length === 0 ? (
           <div className="flex min-h-72 items-center justify-center">
             <div className="flex flex-col items-center gap-3">
@@ -551,54 +530,49 @@ export default function InventoryPage() {
               <table className="w-full min-w-[950px] text-left">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/80">
-                    <th className="px-5 py-3">
-                      <button
-                        type="button"
-                        onClick={() => handleSort("name")}
-                        className="group inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide text-slate-500 uppercase transition hover:text-slate-900"
-                      >
+                    <th className="px-5 py-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">
                         Vehicle
-                        {getSortIcon("name")}
-                      </button>
+                        {/* {getSortIcon("name")} */}
                     </th>
 
-                    <th className="px-5 py-3">
-                      <button
+                    <th className="px-5 py-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                      {/* <button
                         type="button"
                         onClick={() => handleSort("model")}
                         className="group inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide text-slate-500 uppercase transition hover:text-slate-900"
                       >
-                        Model
                         {getSortIcon("model")}
-                      </button>
+                      </button> */}
+                        Model
                     </th>
 
-                    <th className="px-5 py-3">
-                      <button
-                        type="button"
-                        onClick={() => handleSort("year")}
-                        className="group inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide text-slate-500 uppercase transition hover:text-slate-900"
-                      >
-                        Year
-                        {getSortIcon("year")}
-                      </button>
-                    </th>
 
                     <th className="px-5 py-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">
                       Chassis number
                     </th>
 
-                    <th className="px-5 py-3">
-                      <button
+                    
+                    <th className="px-5 py-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                      {/* <button
                         type="button"
                         onClick={() =>
                           handleSort("purchasePrice")
                         }
                         className="group inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide text-slate-500 uppercase transition hover:text-slate-900"
                       >
-                        Purchase price
                         {getSortIcon("purchasePrice")}
-                      </button>
+                      </button> */}
+                        Purchase price
+                    </th>
+                    <th className="px-5 py-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                      {/* <button
+                        type="button"
+                        onClick={() => handleSort("purchaseDate")}
+                        className="group inline-flex items-center gap-1.5 text-xs tracking-wide text-slate-500 uppercase transition hover:text-slate-900"
+                      >
+                        {getSortIcon("purchaseDate")}
+                      </button> */}
+                        Purchase Date
                     </th>
 
                     <th className="px-5 py-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">
@@ -619,18 +593,6 @@ export default function InventoryPage() {
                     >
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
-                          {vehicle.images?.[0]?.url ? (
-                            <img
-                              src={vehicle.images[0].url}
-                              alt={vehicle.name}
-                              className="h-12 w-16 rounded-lg object-cover ring-1 ring-slate-200"
-                            />
-                          ) : (
-                            <div className="flex h-12 w-16 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[11px] font-medium text-slate-400">
-                              No image
-                            </div>
-                          )}
-
                           <div className="min-w-0">
                             <p className="truncate text-sm font-semibold text-slate-900">
                               {vehicle.name}
@@ -647,9 +609,6 @@ export default function InventoryPage() {
                         {vehicle.model}
                       </td>
 
-                      <td className="px-5 py-4 text-sm font-medium text-slate-700">
-                        {vehicle.year}
-                      </td>
 
                       <td className="px-5 py-4">
                         <span className="font-mono text-xs text-slate-600">
@@ -659,6 +618,10 @@ export default function InventoryPage() {
 
                       <td className="px-5 py-4 text-sm font-semibold text-slate-900">
                         {formatPrice(vehicle.purchasePrice)}
+                      </td>
+
+                      <td className="px-5 py-4 text-sm font-medium text-slate-700">
+                        {formatDate(vehicle.purchaseDate)}
                       </td>
 
                       <td className="px-5 py-4">
@@ -930,7 +893,7 @@ export default function InventoryPage() {
                     </span>
 
                     <span className="font-semibold text-slate-900">
-                      Rs. {Number(salePrice).toLocaleString("en-PK")}
+                    ¥. {Number(salePrice).toLocaleString("en-PK")}
                     </span>
                   </div>
                 </div>

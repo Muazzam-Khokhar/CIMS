@@ -19,6 +19,9 @@ export type AuditEntity =
   | "SALE"
   | "PAYMENT"
   | "GENERAL_EXPENSE"
+  | "PARTNER"
+  | "LOAN"
+  | "FINANCE_TRANSACTION"
   | "AUTH";
 
 export interface IAuditLog extends Document {
@@ -81,6 +84,9 @@ const auditLogSchema = new Schema<IAuditLog>(
         "SALE",
         "PAYMENT",
         "GENERAL_EXPENSE",
+        "PARTNER",
+        "LOAN",
+        "FINANCE_TRANSACTION",
         "AUTH",
       ],
       required: true,

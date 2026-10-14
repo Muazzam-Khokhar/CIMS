@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Sale from "@/models/Sale";
 import Payment from "@/models/Payment";
+import Vehicle from "@/models/Vehicle";
 import mongoose from "mongoose";
 import { createAuditLog } from "@/lib/audit";
 import {
@@ -217,16 +218,13 @@ export async function getPayments(searchParams: URLSearchParams) {
 
     if (search) {
       const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const matchingVehicles = await mongoose
-        .model("Vehicle")
-        .find({
-          $or: [
-            { name: { $regex: escapedSearch, $options: "i" } },
-            { model: { $regex: escapedSearch, $options: "i" } },
-            { chassisNumber: { $regex: escapedSearch, $options: "i" } },
-          ],
-        })
-        .distinct("_id");
+      const matchingVehicles = await Vehicle.find({
+        $or: [
+          { name: { $regex: escapedSearch, $options: "i" } },
+          { model: { $regex: escapedSearch, $options: "i" } },
+          { chassisNumber: { $regex: escapedSearch, $options: "i" } },
+        ],
+      }).distinct("_id");
 
       const matchingSales = await Sale.find({
         $or: [
@@ -245,7 +243,7 @@ export async function getPayments(searchParams: URLSearchParams) {
           select: "vehicleId saleType salePrice saleDate",
           populate: {
             path: "vehicleId",
-            select: "name model year chassisNumber",
+            select: "name model chassisNumber",
           },
         })
         .sort({ paymentDate: -1, createdAt: -1 })

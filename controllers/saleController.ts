@@ -355,7 +355,7 @@ export async function getSales(searchParams: URLSearchParams) {
         .populate({
           path: "vehicleId",
           select:
-            "name model year color chassisNumber registrationNumber purchasePrice",
+            "name model color chassisNumber registrationNumber purchasePrice",
         })
         .sort({ saleDate: -1, createdAt: -1 })
         .skip(skip)

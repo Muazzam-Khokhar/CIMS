@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   Receipt,
   Settings,
+  BadgeJapaneseYen,
   ShoppingCart,
   Users,
   type LucideIcon,
@@ -68,6 +69,32 @@ export const navigation: NavItem[] = [
     href: "/payments",
     icon: CreditCard,
     description: "Money in and out",
+  },
+  {
+    name: "Finance",
+    href: "/finance",
+    icon: BadgeJapaneseYen,
+    description: "Finance Management",
+    children: [
+      {
+        name: "Partners",
+        href: "/finance/partners",
+        icon: CarFront,
+        description: "Manage partners",
+      },
+      {
+        name: "Loans",
+        href: "/finance/loans",
+        icon: Receipt,
+        description: "Manage loans",
+      },
+      {
+        name: "Transcations",
+        href: "/finance/transactions",
+        icon: Receipt,
+        description: "Manage transactions",
+      },
+    ],
   },
   {
     name: "Reports",

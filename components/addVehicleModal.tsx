@@ -13,7 +13,6 @@ type AddVehicleModalProps = {
 type VehicleForm = {
   name: string;
   model: string;
-  year: string;
   color: string;
   chassisNumber: string;
   purchasePrice: string;
@@ -37,7 +36,6 @@ type UploadedImage = {
 const BASIC_FIELDS: (keyof VehicleForm)[] = [
   "name",
   "model",
-  "year",
   "color",
   "chassisNumber",
   "purchasePrice",
@@ -60,7 +58,6 @@ const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const emptyForm: VehicleForm = {
   name: "",
   model: "",
-  year: "",
   color: "",
   chassisNumber: "",
   purchasePrice: "",
@@ -229,28 +226,6 @@ export function AddVehicleModal({
       newErrors.name = "Vehicle name is required";
     }
 
-    if (!form.model.trim()) {
-      newErrors.model = "Model is required";
-    }
-
-    if (!form.year.trim()) {
-      newErrors.year = "Year is required";
-    } else {
-      const year = Number(form.year);
-
-      if (!/^\d{4}$/.test(form.year) || year < 1900 || year > maxYear) {
-        newErrors.year = `Enter a valid year between 1900 and ${maxYear}`;
-      }
-    }
-
-    if (!form.color.trim()) {
-      newErrors.color = "Color is required";
-    }
-
-    if (!form.chassisNumber.trim()) {
-      newErrors.chassisNumber = "Chassis number is required";
-    }
-
     if (!form.purchasePrice.trim()) {
       newErrors.purchasePrice = "Purchase price is required";
     } else if (
@@ -367,7 +342,6 @@ export function AddVehicleModal({
       const payload = {
         name: form.name.trim(),
         model: form.model.trim(),
-        year: Number(form.year),
         color: form.color.trim(),
         chassisNumber: form.chassisNumber.trim(),
         purchasePrice: Number(form.purchasePrice),
@@ -425,7 +399,6 @@ export function AddVehicleModal({
         error instanceof Error ? error.message : "Failed to create vehicle";
 
       if (/chassis/i.test(message)) {
-        // e.g. "A vehicle with this chassis number already exists"
         setErrors((previous) => ({ ...previous, chassisNumber: message }));
         setActiveTab("basic");
       } else {
@@ -556,7 +529,6 @@ export function AddVehicleModal({
                 <Field
                   id="vehicle-model"
                   label="Model"
-                  required
                   error={errors.model}
                 >
                   <input
@@ -569,60 +541,6 @@ export function AddVehicleModal({
                     className={inputClass(Boolean(errors.model))}
                   />
                 </Field>
-
-                <Field
-                  id="vehicle-year"
-                  label="Year"
-                  required
-                  error={errors.year}
-                >
-                  <input
-                    id="vehicle-year"
-                    type="number"
-                    value={form.year}
-                    onChange={(e) => updateField("year", e.target.value)}
-                    placeholder="e.g. 2024"
-                    aria-invalid={Boolean(errors.year)}
-                    className={inputClass(Boolean(errors.year))}
-                  />
-                </Field>
-
-                <Field
-                  id="vehicle-color"
-                  label="Color"
-                  required
-                  error={errors.color}
-                >
-                  <input
-                    id="vehicle-color"
-                    type="text"
-                    value={form.color}
-                    onChange={(e) => updateField("color", e.target.value)}
-                    placeholder="e.g. Black"
-                    aria-invalid={Boolean(errors.color)}
-                    className={inputClass(Boolean(errors.color))}
-                  />
-                </Field>
-
-                <Field
-                  id="vehicle-chassis"
-                  label="Chassis Number"
-                  required
-                  error={errors.chassisNumber}
-                >
-                  <input
-                    id="vehicle-chassis"
-                    type="text"
-                    value={form.chassisNumber}
-                    onChange={(e) =>
-                      updateField("chassisNumber", e.target.value)
-                    }
-                    placeholder="Enter chassis number"
-                    aria-invalid={Boolean(errors.chassisNumber)}
-                    className={inputClass(Boolean(errors.chassisNumber))}
-                  />
-                </Field>
-
                 <Field
                   id="vehicle-price"
                   label="Purchase Price"
@@ -646,6 +564,7 @@ export function AddVehicleModal({
                 <Field
                   id="vehicle-purchase-date"
                   label="Purchase Date"
+                  required
                   error={errors.purchaseDate}
                 >
                   <input
@@ -658,6 +577,39 @@ export function AddVehicleModal({
                     }
                     aria-invalid={Boolean(errors.purchaseDate)}
                     className={inputClass(Boolean(errors.purchaseDate))}
+                  />
+                </Field>
+                <Field
+                  id="vehicle-color"
+                  label="Color"
+                  error={errors.color}
+                >
+                  <input
+                    id="vehicle-color"
+                    type="text"
+                    value={form.color}
+                    onChange={(e) => updateField("color", e.target.value)}
+                    placeholder="e.g. Black"
+                    aria-invalid={Boolean(errors.color)}
+                    className={inputClass(Boolean(errors.color))}
+                  />
+                </Field>
+
+                <Field
+                  id="vehicle-chassis"
+                  label="Chassis Number"
+                  error={errors.chassisNumber}
+                >
+                  <input
+                    id="vehicle-chassis"
+                    type="text"
+                    value={form.chassisNumber}
+                    onChange={(e) =>
+                      updateField("chassisNumber", e.target.value)
+                    }
+                    placeholder="Enter chassis number"
+                    aria-invalid={Boolean(errors.chassisNumber)}
+                    className={inputClass(Boolean(errors.chassisNumber))}
                   />
                 </Field>
               </div>

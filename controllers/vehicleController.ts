@@ -11,7 +11,6 @@ import Payment from "@/models/Payment";
 type CreateVehicleData = {
   name: string;
   model: string;
-  year: number;
   color: string;
   chassisNumber: string;
   engineNumber?: string;
@@ -30,7 +29,6 @@ type CreateVehicleData = {
 type UpdateVehicleData = {
   name?: string;
   model?: string;
-  year?: number;
   color?: string;
   chassisNumber?: string;
   engineNumber?: string;
@@ -49,7 +47,6 @@ type UpdateVehicleData = {
 type VehicleSortField =
   | "name"
   | "model"
-  | "year"
   | "purchasePrice"
   | "purchaseDate"
   | "createdAt";
@@ -80,7 +77,6 @@ export async function getVehicles(
     const allowedSortFields: VehicleSortField[] = [
       "name",
       "model",
-      "year",
       "purchasePrice",
       "purchaseDate",
       "createdAt",
@@ -287,36 +283,6 @@ export async function createVehicle(data: CreateVehicleData,actor: AuditActor,) 
       );
     }
     
-    if (!isValidYear(data.year)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid vehicle year",
-        },
-        { status: 400 },
-      );
-    }
-    
-    if (!data.color?.trim()) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Vehicle color is required",
-        },
-        { status: 400 },
-      );
-    }
-    
-    if (!data.chassisNumber?.trim()) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Chassis number is required",
-        },
-        { status: 400 },
-      );
-    }
-    
     if (
       data.mileage !== undefined &&
       !isValidNonNegativeNumber(data.mileage)
@@ -359,7 +325,6 @@ export async function createVehicle(data: CreateVehicleData,actor: AuditActor,) 
     const vehicle = await Vehicle.create({
       name: data.name.trim(),
       model: data.model.trim(),
-      year: data.year,
       color: data.color.trim(),
       chassisNumber: data.chassisNumber.trim(),
       engineNumber:
@@ -386,7 +351,6 @@ export async function createVehicle(data: CreateVehicleData,actor: AuditActor,) 
       after: {
         name: vehicle.name,
         model: vehicle.model,
-        year: vehicle.year,
         color: vehicle.color,
         chassisNumber: vehicle.chassisNumber,
         engineNumber: vehicle.engineNumber,
@@ -451,9 +415,8 @@ export async function updateVehicle(
 
     for (const [field, label] of [
       ["name", "Vehicle name"],
-      ["model", "Vehicle model"],
-      ["color", "Vehicle color"],
-      ["chassisNumber", "Chassis number"],
+      ["purchaseDate", "Vehicle purchase date"],
+      ["purchasePrice", "Vehicle purchase price"],
     ] as const) {
       const value = data[field];
     
@@ -485,13 +448,6 @@ export async function updateVehicle(
       updates[field] = value.trim() || undefined;
     }
     
-    if (data.year !== undefined) {
-      if (!isValidYear(data.year)) {
-        return badRequest("Invalid vehicle year");
-      }
-    
-      updates.year = data.year;
-    }
     
     if (data.mileage !== undefined) {
       if (data.mileage === null) {
@@ -566,7 +522,6 @@ export async function updateVehicle(
       before: {
         name: before.name,
         model: before.model,
-        year: before.year,
         color: before.color,
         chassisNumber: before.chassisNumber,
         engineNumber: before.engineNumber,
@@ -581,7 +536,6 @@ export async function updateVehicle(
       after: {
         name: vehicle.name,
         model: vehicle.model,
-        year: vehicle.year,
         color: vehicle.color,
         chassisNumber: vehicle.chassisNumber,
         engineNumber: vehicle.engineNumber,

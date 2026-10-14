@@ -29,10 +29,9 @@ type VehicleImage = {
 type Vehicle = {
   _id: string;
   name: string;
-  model: string;
-  year: number;
-  color: string;
-  chassisNumber: string;
+  model?: string;
+  color?: string;
+  chassisNumber?: string;
   engineNumber?: string;
   registrationNumber?: string;
   mileage?: number;
@@ -176,7 +175,7 @@ export default function VehicleViewPage({ params }: Props) {
 
     const confirmed = await confirm({
       title: "Discard this vehicle?",
-      description: `"${vehicle.name} ${vehicle.model}" will be marked as discarded and can no longer be sold or edited.`,
+      description: `"${vehicle.name} ${vehicle.model || ""}".trim() will be marked as discarded and can no longer be sold or edited.`,
       confirmText: "Discard",
     });
 
@@ -208,6 +207,7 @@ export default function VehicleViewPage({ params }: Props) {
       setDiscarding(false);
     }
   };
+
   const openExpenseModal = () => {
     setExpenseForm({
       title: "",
@@ -217,30 +217,30 @@ export default function VehicleViewPage({ params }: Props) {
     });
     setExpenseOpen(true);
   };
-  
+
   const handleAddExpense = async () => {
     if (!vehicle) return;
-  
+
     const amount = Number(expenseForm.amount);
-  
+
     if (!expenseForm.title.trim()) {
       toast.error("Please enter an expense title.");
       return;
     }
-  
+
     if (!amount || amount <= 0) {
       toast.error("Please enter a valid expense amount.");
       return;
     }
-  
+
     if (!expenseForm.expenseDate) {
       toast.error("Please select the expense date.");
       return;
     }
-  
+
     try {
       setSavingExpense(true);
-  
+
       const response = await fetch("/api/vehicle-expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -252,19 +252,19 @@ export default function VehicleViewPage({ params }: Props) {
           notes: expenseForm.notes.trim() || undefined,
         }),
       });
-  
+
       const result = await response.json();
-  
+
       if (!response.ok || !result.success) {
         throw new Error(result.message || "Failed to add expense");
       }
-  
+
       toast.success("Vehicle expense added successfully.");
       setExpenseOpen(false);
-      await loadVehicle(false); // refreshes expenses, investment and profit
+      await loadVehicle(false);
     } catch (error) {
       console.error("Add vehicle expense error:", error);
-  
+
       toast.error(
         error instanceof Error ? error.message : "Failed to add expense"
       );
@@ -347,7 +347,7 @@ export default function VehicleViewPage({ params }: Props) {
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-                  {vehicle.name} {vehicle.model}
+                  {vehicle.name} {vehicle.model || ""}
                 </h1>
 
                 <span
@@ -360,7 +360,7 @@ export default function VehicleViewPage({ params }: Props) {
               </div>
 
               <p className="mt-0.5 text-sm text-slate-500">
-                {vehicle.year} · {vehicle.color}
+                {vehicle.color || "No Color"}
                 {vehicle.registrationNumber
                   ? ` · ${vehicle.registrationNumber}`
                   : ""}
@@ -603,23 +603,43 @@ export default function VehicleViewPage({ params }: Props) {
         </section>
       )}
 
-      {/* Vehicle details */}
+      {/* Basic Details */}
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="mb-5">
           <h2 className="text-sm font-semibold text-slate-900">
-            Vehicle Details
+            Basic Details
           </h2>
 
           <p className="mt-1 text-xs text-slate-500">
-            Basic information about this vehicle.
+            Primary details for this vehicle.
           </p>
         </div>
 
         <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
           <Detail label="Vehicle Name" value={vehicle.name} />
           <Detail label="Model" value={vehicle.model} />
-          <Detail label="Year" value={String(vehicle.year)} />
           <Detail label="Color" value={vehicle.color} />
+          <Detail
+            label="Purchase Date"
+            value={vehicle.purchaseDate ? formatDate(vehicle.purchaseDate) : undefined}
+          />
+          <Detail label="Purchase Price" value={formatPrice(vehicle.purchasePrice)} />
+        </div>
+      </section>
+
+      {/* Additional Information */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-5">
+          <h2 className="text-sm font-semibold text-slate-900">
+            Additional Information
+          </h2>
+
+          <p className="mt-1 text-xs text-slate-500">
+            Extended specifications and record details.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
           <Detail label="Chassis Number" value={vehicle.chassisNumber} mono />
           <Detail label="Engine Number" value={vehicle.engineNumber} mono />
           <Detail
@@ -636,10 +656,6 @@ export default function VehicleViewPage({ params }: Props) {
           />
           <Detail label="Location" value={vehicle.location} />
           <Detail label="Condition" value={vehicle.condition} />
-          <Detail
-            label="Purchase Date"
-            value={vehicle.purchaseDate ? formatDate(vehicle.purchaseDate) : undefined}
-          />
           <Detail label="Added" value={formatDate(vehicle.createdAt)} />
           <Detail label="Last Updated" value={formatDate(vehicle.updatedAt)} />
         </div>
@@ -655,6 +671,8 @@ export default function VehicleViewPage({ params }: Props) {
           </p>
         </section>
       )}
+
+      {/* Add Expense Modal */}
       {expenseOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
           <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
@@ -664,7 +682,7 @@ export default function VehicleViewPage({ params }: Props) {
                   Add Vehicle Expense
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  {vehicle.name} {vehicle.model} · {vehicle.chassisNumber}
+                  {vehicle.name} {vehicle.model || ""} {vehicle.chassisNumber ? `· ${vehicle.chassisNumber}` : ""}
                 </p>
               </div>
 
@@ -766,11 +784,13 @@ export default function VehicleViewPage({ params }: Props) {
           </div>
         </div>
       )}
+
+      {/* Return Sale Modal */}
       {financials?.sale && (
         <ReturnSaleModal
           open={returnOpen}
           saleId={financials.sale._id}
-          vehicleLabel={`${vehicle.name} ${vehicle.model} · ${vehicle.chassisNumber}`}
+          vehicleLabel={`${vehicle.name} ${vehicle.model || ""} · ${vehicle.chassisNumber || ""}`}
           totalPaid={financials.sale.totalPaid}
           onClose={() => setReturnOpen(false)}
           onSuccess={() => loadVehicle(false)}

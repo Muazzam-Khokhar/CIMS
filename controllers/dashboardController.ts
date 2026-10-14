@@ -12,7 +12,6 @@ type PopulatedVehicle = {
   _id: Types.ObjectId;
   name: string;
   model: string;
-  year: number;
   chassisNumber: string;
   registrationNumber?: string;
   purchasePrice?: number;
@@ -50,7 +49,7 @@ export async function getDashboard() {
       )
       .populate<{ vehicleId: PopulatedVehicle | null }>({
         path: "vehicleId",
-        select: "name model year chassisNumber registrationNumber purchasePrice",
+        select: "name model chassisNumber registrationNumber purchasePrice",
       })
       .sort({ saleDate: -1, createdAt: -1 })
       .lean();
@@ -205,7 +204,6 @@ export async function getDashboard() {
           _id: vehicle?._id,
           name: vehicle?.name,
           model: vehicle?.model,
-          year: vehicle?.year,
           chassisNumber: vehicle?.chassisNumber,
         },
         purchasePrice,
@@ -234,7 +232,7 @@ export async function getDashboard() {
         select: "saleType salePrice vehicleId",
         populate: {
           path: "vehicleId",
-          select: "name model year chassisNumber",
+          select: "name model chassisNumber",
         },
       })
       .sort({
@@ -277,7 +275,6 @@ export async function getDashboard() {
                 _id: sale.vehicleId._id,
                 name: sale.vehicleId.name,
                 model: sale.vehicleId.model,
-                year: sale.vehicleId.year,
                 chassisNumber:
                   sale.vehicleId.chassisNumber,
               }
