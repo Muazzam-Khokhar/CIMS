@@ -12,9 +12,9 @@ import { SIGNED_AMOUNT } from "@/lib/paymentTotals";
 
 type CreateVehicleData = {
   name: string;
-  model: string;
-  color: string;
-  chassisNumber: string;
+  model?: string;
+  color?: string;
+  chassisNumber?: string;
   engineNumber?: string;
   registrationNumber?: string;
   mileage?: number;
@@ -62,7 +62,11 @@ export async function getVehicles(
   searchParams: URLSearchParams,
 ) {
   try {
+    const connectStarted = performance.now();
     await connectDB();
+    const connectMs = performance.now() - connectStarted;
+
+    const queryStarted = performance.now();
 
     const { page, limit, skip } =
       getPaginationParams(searchParams);
@@ -71,7 +75,7 @@ export async function getVehicles(
     const status = searchParams.get("status") || "ALL";
 
     const requestedSortBy =
-      searchParams.get("sortBy") || "createdAt";
+      searchParams.get("sortBy") || "purchasePrice";
 
     const requestedSortOrder =
       searchParams.get("sortOrder") || "desc";
@@ -89,7 +93,7 @@ export async function getVehicles(
         requestedSortBy as VehicleSortField
       )
         ? (requestedSortBy as VehicleSortField)
-        : "createdAt";
+        : "purchasePrice";
 
     const sortOrder: SortOrder =
       requestedSortOrder === "asc"
@@ -102,19 +106,6 @@ export async function getVehicles(
       filter.$or = [
         { name: { $regex: search, $options: "i" } },
         { model: { $regex: search, $options: "i" } },
-        { color: { $regex: search, $options: "i" } },
-        {
-          chassisNumber: {
-            $regex: search,
-            $options: "i",
-          },
-        },
-        {
-          registrationNumber: {
-            $regex: search,
-            $options: "i",
-          },
-        },
       ];
     }
 
@@ -130,8 +121,8 @@ export async function getVehicles(
       [sortBy]: sortOrder === "asc" ? 1 : -1,
     };
 
-    if (sortBy !== "createdAt") {
-      sort.createdAt = -1;
+    if (sortBy !== "purchasePrice") {
+      sort.purchasePrice = -1;
     }
 
     const [vehicles, totalCount] =
@@ -144,6 +135,13 @@ export async function getVehicles(
 
         Vehicle.countDocuments(filter),
       ]);
+      const queryMs = performance.now() - queryStarted;
+
+      console.log({
+        connectMs: Math.round(connectMs),
+        queryMs: Math.round(queryMs),
+        resultCount: vehicles.length,
+      });
 
     return NextResponse.json({
       success: true,
@@ -275,15 +273,15 @@ export async function createVehicle(data: CreateVehicleData,actor: AuditActor,) 
       );
     }
     
-    if (!data.model?.trim()) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Vehicle model is required",
-        },
-        { status: 400 },
-      );
-    }
+    // if (!data.model?.trim()) {
+    //   return NextResponse.json(
+    //     {
+    //       success: false,
+    //       message: "Vehicle model is required",
+    //     },
+    //     { status: 400 },
+    //   );
+    // }
     
     if (
       data.mileage !== undefined &&
@@ -326,9 +324,9 @@ export async function createVehicle(data: CreateVehicleData,actor: AuditActor,) 
     }
     const vehicle = await Vehicle.create({
       name: data.name.trim(),
-      model: data.model.trim(),
-      color: data.color.trim(),
-      chassisNumber: data.chassisNumber.trim(),
+      model: data.model?.trim() || undefined,
+      color: data.color?.trim() || undefined,
+      chassisNumber: data.chassisNumber?.trim() || undefined,
       engineNumber:
         data.engineNumber?.trim() || undefined,
       registrationNumber:

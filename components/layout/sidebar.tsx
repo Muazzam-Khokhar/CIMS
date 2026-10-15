@@ -2,247 +2,252 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CarFront,ChevronDown, X } from "lucide-react";
+import { CarFront, ChevronDown, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { isNavActive, navigation, settingsItem } from "@/lib/nav";
-import { useState } from "react";
 
 type SidebarProps = {
   open: boolean;
   onClose: () => void;
 };
 
-export function Sidebar({
-  open,
-  onClose,
-}: SidebarProps) {
+const findOpenMenu = (pathname: string) =>
+  navigation.find((item) =>
+    item.children?.some((child) =>
+      isNavActive(pathname, child.href, child.exact),
+    ),
+  )?.href ?? null;
+
+/**
+ * Desktop: icons only until the sidebar is hovered.
+ * Mobile (max-lg): the drawer is always fully open, so everything is shown.
+ */
+const ROW =
+  "flex w-full items-center rounded-xl py-2.5 text-sm font-medium transition " +
+  "justify-center px-0 group-hover/sidebar:justify-start group-hover/sidebar:px-3 " +
+  "max-lg:justify-start max-lg:px-3";
+
+const LABEL = "ml-3 hidden truncate max-lg:block group-hover/sidebar:block";
+
+export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const SettingsIcon = settingsItem.icon;
-  const [expandedMenu, setExpandedMenu] = useState<string | null>(
-    () =>
-      navigation.find((item) =>
-        item.children?.some((child) =>
-          isNavActive(pathname, child.href, child.exact),
-        ),
-      )?.href ?? null,
+
+  const [expandedMenu, setExpandedMenu] = useState<string | null>(() =>
+    findOpenMenu(pathname),
   );
+  const [menuPath, setMenuPath] = useState(pathname);
+
+  // Re-open the right group when the page changes (no effect needed)
+  if (menuPath !== pathname) {
+    setMenuPath(pathname);
+    setExpandedMenu(findOpenMenu(pathname));
+  }
+
+  // Mobile drawer: lock page scroll, close on Escape, close if resized to desktop
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    const media = window.matchMedia("(min-width: 1024px)");
+    const onChange = (event: MediaQueryListEvent) => {
+      if (event.matches) onClose();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    media.addEventListener("change", onChange);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+      media.removeEventListener("change", onChange);
+    };
+  }, [open, onClose]);
 
   return (
     <>
+      {/* Mobile backdrop */}
       <button
         type="button"
         aria-label="Close menu"
+        tabIndex={open ? 0 : -1}
         onClick={onClose}
-        className={`fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-[2px] transition lg:hidden ${
-          open
-            ? "opacity-100"
-            : "pointer-events-none opacity-0"
+        className={`fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-[2px] transition-opacity duration-300 lg:hidden ${
+          open ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
 
       <aside
-        className={`group/sidebar fixed inset-y-0 left-0 z-50 flex w-[76px] flex-col overflow-visible bg-[#07111f] text-white shadow-[8px_0_40px_rgba(2,8,23,0.28)] transition-[width,transform] duration-300 hover:w-[272px] lg:translate-x-0 ${
-          open
-            ? "translate-x-0"
-            : "-translate-x-full"
+        className={`group/sidebar fixed top-0 left-0 z-50 flex h-dvh w-[76px] max-w-[85vw] flex-col overflow-hidden bg-[#07111f] text-white shadow-[8px_0_40px_rgba(2,8,23,0.28)] transition-[width,transform,visibility] duration-300 hover:w-[280px] max-lg:w-[280px] lg:translate-x-0 ${
+          open ? "translate-x-0" : "-translate-x-full max-lg:invisible"
         }`}
       >
-        {/* Logo */}
-        <div className="relative overflow-hidden border-b border-white/10">
-          <div className="pointer-events-none absolute -right-10 -top-12 h-32 w-32 rounded-full bg-sky-500/20 blur-2xl" />
+        {/* Logo (stays pinned) */}
+        <div className="relative shrink-0 overflow-hidden border-b border-white/10">
+          <div className="pointer-events-none absolute -top-12 -right-10 h-32 w-32 rounded-full bg-sky-500/20 blur-2xl" />
 
-          <div className="relative flex h-[76px] items-center justify-center px-3 group-hover/sidebar:justify-start group-hover/sidebar:gap-3 group-hover/sidebar:px-5">
+          <div className="relative flex h-[76px] items-center justify-center px-3 group-hover/sidebar:justify-start group-hover/sidebar:px-5 max-lg:justify-start max-lg:px-5">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 to-blue-700 shadow-lg shadow-blue-900/40">
               <CarFront className="h-5 w-5 text-white" />
             </div>
 
-            <div className="hidden min-w-0 flex-1 group-hover/sidebar:block">
+            <div className="ml-3 hidden min-w-0 flex-1 max-lg:block group-hover/sidebar:block">
               <p className="text-[11px] font-semibold tracking-[0.18em] text-sky-300/80 uppercase">
                 Workspace
               </p>
-
               <h1 className="truncate text-lg font-semibold tracking-tight">
                 CIMS
               </h1>
             </div>
 
-            {/* Mobile close only */}
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-white/8 hover:text-white lg:hidden"
-              aria-label="Close sidebar"
+              aria-label="Close menu"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white lg:hidden"
             >
-              <X className="h-4 w-4" />
+              <X className="h-5 w-5" />
             </button>
           </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1  px-3 py-5">
-          <p className="mb-2 hidden px-3 text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase group-hover/sidebar:block">
+        {/* Navigation (only this part scrolls) */}
+        <nav
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-5 [scrollbar-color:rgba(255,255,255,0.18)_transparent] [scrollbar-width:none] group-hover/sidebar:[scrollbar-width:thin] max-lg:[scrollbar-width:thin]"
+        >
+          <p className="mb-2 hidden px-3 text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase max-lg:block group-hover/sidebar:block">
             Menu
           </p>
 
           <div className="space-y-1">
-          {navigation.map((item) => {
-            const Icon = item.icon;
-            const hasChildren = Boolean(item.children?.length);
-            const isExpanded = expandedMenu === item.href;
+            {navigation.map((item) => {
+              const Icon = item.icon;
+              const hasChildren = Boolean(item.children?.length);
+              const isExpanded = expandedMenu === item.href;
 
-            const active =
-              isNavActive(pathname, item.href, item.exact) ||
-              Boolean(
-                item.children?.some((child) =>
-                  isNavActive(pathname, child.href, child.exact),
-                ),
-              );
+              const active =
+                isNavActive(pathname, item.href, item.exact) ||
+                Boolean(
+                  item.children?.some((child) =>
+                    isNavActive(pathname, child.href, child.exact),
+                  ),
+                );
 
-            return (
-              <div
-                key={item.href}
-                className="group/item relative"
-              >
-                {hasChildren ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedMenu(
-                        isExpanded ? null : item.href,
-                      )
-                    }
-                    className={`flex w-full items-center rounded-xl py-2.5 text-sm font-medium transition ${
-                      "justify-center px-0 group-hover/sidebar:justify-start group-hover/sidebar:gap-3 group-hover/sidebar:px-3"
-                    } ${
-                      active
-                        ? "bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
-                        : "text-slate-400 hover:bg-white/5 hover:text-white"
-                    }`}
-                  >
-                    <span
-                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                        active
-                          ? "bg-sky-500 text-white"
-                          : "bg-white/5 text-slate-400"
-                      }`}
+              const rowTone = active
+                ? "bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+                : "text-slate-400 hover:bg-white/5 hover:text-white";
+
+              const iconTone = active
+                ? "bg-sky-500 text-white"
+                : "bg-white/5 text-slate-400";
+
+              return (
+                <div key={item.href}>
+                  {hasChildren ? (
+                    <button
+                      type="button"
+                      title={item.name}
+                      aria-expanded={isExpanded}
+                      onClick={() =>
+                        setExpandedMenu(isExpanded ? null : item.href)
+                      }
+                      className={`${ROW} ${rowTone}`}
                     >
-                      <Icon className="h-4 w-4" />
-                    </span>
+                      <span
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconTone}`}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </span>
 
-                    <span className="ml-3 hidden flex-1 truncate text-left group-hover/sidebar:block">
-                      {item.name}
-                    </span>
+                      <span className={`${LABEL} flex-1 text-left`}>
+                        {item.name}
+                      </span>
 
-                    <ChevronDown
-                      className={`mr-1 hidden h-4 w-4 shrink-0 transition group-hover/sidebar:block ${
-                        isExpanded ? "rotate-180" : ""
-                      }`}
-                    />
-                  </button>
-                ) : (
-                  <Link
-                    href={item.href}
-                    onClick={onClose}
-                    className={`flex items-center rounded-xl py-2.5 text-sm font-medium transition ${
-                      "justify-center px-0 group-hover/sidebar:justify-start group-hover/sidebar:gap-3 group-hover/sidebar:px-3"
-                    } ${
-                      active
-                        ? "bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
-                        : "text-slate-400 hover:bg-white/5 hover:text-white"
-                    }`}
-                  >
-                    <span
-                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                        active
-                          ? "bg-sky-500 text-white"
-                          : "bg-white/5 text-slate-400 group-hover/item:text-white"
-                      }`}
+                      <ChevronDown
+                        className={`mr-1 hidden h-4 w-4 shrink-0 transition max-lg:block group-hover/sidebar:block ${
+                          isExpanded ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                  ) : (
+                    <Link
+                      href={item.href}
+                      title={item.name}
+                      onClick={onClose}
+                      className={`${ROW} ${rowTone}`}
                     >
-                      <Icon className="h-4 w-4" />
-                    </span>
+                      <span
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconTone}`}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </span>
 
-                    <span className="ml-3 hidden truncate group-hover/sidebar:block">
-                      {item.name}
-                    </span>
-                  </Link>
-                )}
+                      <span className={LABEL}>{item.name}</span>
+                    </Link>
+                  )}
 
-                {/* Expenses submenu */}
-                {hasChildren && isExpanded && (
-                  <div className="mt-1 hidden space-y-1 pl-11 group-hover/sidebar:block">
-                    {item.children!.map((child) => {
-                      const childActive = isNavActive(pathname, child.href, child.exact);
+                  {/* Submenu */}
+                  {hasChildren && isExpanded && (
+                    <div className="mt-1 hidden space-y-1 pl-11 max-lg:block group-hover/sidebar:block">
+                      {item.children!.map((child) => {
+                        const childActive = isNavActive(
+                          pathname,
+                          child.href,
+                          child.exact,
+                        );
 
-                      return (
-                        <Link
-                          key={child.href}
-                          href={child.href}
-                          onClick={onClose}
-                          className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition ${
-                            childActive
-                              ? "bg-sky-500/15 text-sky-300"
-                              : "text-slate-400 hover:bg-white/5 hover:text-white"
-                          }`}
-                        >
-                          {/* Bullet */}
-                          <span
-                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            onClick={onClose}
+                            className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs font-medium transition ${
                               childActive
-                                ? "bg-sky-400"
-                                : "bg-slate-500"
+                                ? "bg-sky-500/15 text-sky-300"
+                                : "text-slate-400 hover:bg-white/5 hover:text-white"
                             }`}
-                          />
-
-                          <span className="truncate">
-                            {child.name}
-                          </span>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Tooltip when collapsed */}
-                <div className="pointer-events-none absolute top-1/2 left-full z-[70] ml-3 -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white opacity-0 shadow-xl transition-opacity group-hover/item:opacity-100 group-hover/sidebar:hidden">
-                  {item.name}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                                childActive ? "bg-sky-400" : "bg-slate-500"
+                              }`}
+                            />
+                            <span className="truncate">{child.name}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
           </div>
         </nav>
 
-        {/* Bottom section */}
-        <div className="border-t border-white/10 p-3">
-          {/* Settings */}
-          <div className="group/item relative">
-            <Link
-              href={settingsItem.href}
-              onClick={onClose}
-              className={`flex items-center rounded-xl py-2 text-sm font-medium transition ${
-                "justify-center px-0 group-hover/sidebar:justify-start group-hover/sidebar:gap-3 group-hover/sidebar:px-3"
-              } ${
-                isNavActive(
-                  pathname,
-                  settingsItem.href,
-                )
-                  ? "bg-white/10 text-white"
-                  : "text-slate-400 hover:bg-white/5 hover:text-white"
-              }`}
-            >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5">
-                <SettingsIcon className="h-4 w-4" />
-              </span>
+        {/* Settings (stays pinned, clear of the phone's bottom bar) */}
+        <div className="shrink-0 border-t border-white/10 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <Link
+            href={settingsItem.href}
+            title="Settings"
+            onClick={onClose}
+            className={`${ROW} ${
+              isNavActive(pathname, settingsItem.href)
+                ? "bg-white/10 text-white"
+                : "text-slate-400 hover:bg-white/5 hover:text-white"
+            }`}
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5">
+              <SettingsIcon className="h-4 w-4" />
+            </span>
 
-              <span className="ml-3 hidden group-hover/sidebar:block">
-                Settings
-              </span>
-            </Link>
-
-            {/* Settings tooltip */}
-            <div className="pointer-events-none absolute top-1/2 left-full z-[70] ml-3 -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white opacity-0 shadow-xl transition-opacity group-hover/item:opacity-100 group-hover/sidebar:hidden">
-              Settings
-            </div>
-          </div>
+            <span className={LABEL}>Settings</span>
+          </Link>
         </div>
       </aside>
     </>

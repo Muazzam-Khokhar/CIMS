@@ -25,9 +25,9 @@ type Vehicle = {
   _id: string;
   images: VehicleImage[];
   name: string;
-  model: string;
-  color: string;
-  chassisNumber: string;
+  model?: string;
+  color?: string;
+  chassisNumber?: string;
   engineNumber?: string;
   registrationNumber?: string;
   mileage?: number;
@@ -62,7 +62,7 @@ export default function InventoryPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [sortBy, setSortBy] =
-    useState<VehicleSortField>("createdAt");
+    useState<VehicleSortField>("purchaseDate");
   const [sortOrder, setSortOrder] =
     useState<SortOrder>("desc");
   const [addOpen, setAddOpen] = useState(false);
@@ -178,9 +178,9 @@ export default function InventoryPage() {
       const matchesSearch =
         !query ||
         vehicle.name.toLowerCase().includes(query) ||
-        vehicle.model.toLowerCase().includes(query) ||
-        vehicle.color.toLowerCase().includes(query) ||
-        vehicle.chassisNumber.toLowerCase().includes(query) ||
+        vehicle.model?.toLowerCase().includes(query) ||
+        vehicle.color?.toLowerCase().includes(query) ||
+        vehicle.chassisNumber?.toLowerCase().includes(query) ||
         vehicle.registrationNumber
           ?.toLowerCase()
           .includes(query);

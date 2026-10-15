@@ -4,6 +4,7 @@ import Sale from "@/models/Sale";
 import Payment from "@/models/Payment";
 import VehicleExpense from "@/models/VehicleExpense";
 import GeneralExpense from "@/models/GeneralExpense";
+import Vehicle from "@/models/Vehicle";
 import { netPaidBySale } from "@/lib/paymentTotals";
 
 type ReportQuery = { from?: string; to?: string };
@@ -54,7 +55,11 @@ export async function getReports(query: ReportQuery) {
         status: { $ne: "RETURNED" },
         ...between("saleDate", startDate, endDate),
       })
-        .populate("vehicleId", "name model chassisNumber purchasePrice")
+        .populate({
+          path: "vehicleId",
+          model: Vehicle,
+          select: "name model chassisNumber purchasePrice",
+        })
         .sort({ saleDate: -1 })
         .lean(),
 

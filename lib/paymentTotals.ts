@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import Payment from "@/models/Payment";
+import Vehicle from "@/models/Vehicle";
 
 export const SIGNED_AMOUNT = {
   $cond: [

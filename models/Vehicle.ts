@@ -2,9 +2,9 @@ import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IVehicle {
   name: string;
-  model: string;
-  color: string;
-  chassisNumber: string;
+  model?: string;
+  color?: string;
+  chassisNumber?: string;
 
   engineNumber?: string;
   registrationNumber?: string;

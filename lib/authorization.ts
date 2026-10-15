@@ -48,14 +48,20 @@ export async function requireRoles(
 
     return response;
   }
-
+  const dbStarted = performance.now();
   await connectDB();
-
+  const connectMs = performance.now() - dbStarted;
+  const lookupStarted = performance.now();
   const admin = await Admin.findOne({
     _id: auth.userId,
     isActive: true,
   }).select("_id role");
-
+  console.log({
+    authDbConnectMs: Math.round(connectMs),
+    adminLookupMs: Math.round(
+      performance.now() - lookupStarted
+    ),
+  });
   if (!admin) {
     const response = NextResponse.json(
       {
@@ -64,7 +70,6 @@ export async function requireRoles(
       },
       { status: 401 },
     );
-
     response.cookies.delete(AUTH_COOKIE_NAME);
 
     return response;
