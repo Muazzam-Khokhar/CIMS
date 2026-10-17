@@ -115,6 +115,34 @@ export async function createPayment(
       );
 
       created = payment;
+      if (type === "REFUND" && net - data.amount <= TOLERANCE) {
+        const refunds = await Payment.aggregate([
+          { $match: { saleId: sale._id, type: "REFUND" } },
+          { $group: { _id: null, total: { $sum: "$amount" } } },
+        ]).session(session);
+      
+        const vehicle = await Vehicle.findById(sale.vehicleId).session(session);
+        if (!vehicle) throw new PaymentError("Vehicle not found", 404);
+      
+        sale.status = "RETURNED";
+        sale.returnDate = new Date(data.paymentDate);
+        sale.refundAmount = refunds[0]?.total ?? data.amount;
+        sale.returnReason = data.notes?.trim() || "All payments returned";
+        await sale.save({ session });
+      
+        vehicle.status = "AVAILABLE";
+        await vehicle.save({ session });
+      
+        await createAuditLog({
+          actor,
+          action: "RETURN",
+          entity: "SALE",
+          entityId: sale._id.toString(),
+          description: `Sale auto-returned: all payments refunded`,
+          after: { status: "RETURNED", refundAmount: sale.refundAmount },
+          session,
+        });
+      }
 
       await createAuditLog({
         actor,
@@ -205,7 +233,7 @@ export async function getPayments(searchParams: URLSearchParams) {
       Payment.find(filter)
         .populate({
           path: "saleId",
-          select: "vehicleId saleType salePrice saleDate",
+          select: "vehicleId saleType salePrice saleDate status",
           populate: { path: "vehicleId", select: "name model chassisNumber" },
         })
         .sort({ paymentDate: -1, createdAt: -1 })
@@ -228,14 +256,32 @@ export async function getPayments(searchParams: URLSearchParams) {
       if (row._id === "REFUND") returned += row.total;
       else received += row.total;
     }
-
+    const saleIds = [
+      ...new Set(
+        payments
+          .map((p: any) => p.saleId?._id)
+          .filter(Boolean)
+          .map(String),
+      ),
+    ].map((id) => new mongoose.Types.ObjectId(id));
+    
+    const nets = await Payment.aggregate([
+      { $match: { saleId: { $in: saleIds } } },
+      { $group: { _id: "$saleId", net: { $sum: SIGNED_AMOUNT } } },
+    ]);
+    const netMap = new Map(nets.map((n) => [String(n._id), n.net]));
+    
+    const data = payments.map((p: any) => ({
+      ...p,
+      saleNet: p.saleId ? netMap.get(String(p.saleId._id)) ?? 0 : 0,
+    }));
     return NextResponse.json({
       success: true,
-      data: payments,
+      data: data,
       page,
       limit,
       totalCount,
-      hasMore: skip + payments.length < totalCount,
+      hasMore: skip + data.length < totalCount,
       totals: {
         received,
         returned,

@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { useConfirm } from "@/components/confirm-provider";
 import { ReturnSaleModal } from "@/components/ReturnSaleModal";
+import { SaleDetailsModal } from "@/components/SaleDetailsModal";
 
 type VehicleImage = {
   url: string;
@@ -122,6 +123,7 @@ export default function VehicleViewPage({ params }: Props) {
   const [activeImage, setActiveImage] = useState(0);
   const todayString = () => new Date().toISOString().split("T")[0];
   const [returnOpen, setReturnOpen] = useState(false);
+  const [saleModal, setSaleModal] = useState<{ add: boolean } | null>(null);
 
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [savingExpense, setSavingExpense] = useState(false);
@@ -579,7 +581,36 @@ export default function VehicleViewPage({ params }: Props) {
                   : "bg-amber-50 text-amber-700"
               }`}
             >
-              {sale.paymentStatus === "PAID" ? "Paid" : "Partial payment"}
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                    sale.paymentStatus === "PAID"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  {sale.paymentStatus === "PAID" ? "Paid" : "Partial payment"}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => setSaleModal({ add: false })}
+                  className="h-8 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Payments
+                </button>
+
+                {sale.remaining > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSaleModal({ add: true })}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-800"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add payment
+                  </button>
+                )}
+              </div>
             </span>
           </div>
 
@@ -796,6 +827,12 @@ export default function VehicleViewPage({ params }: Props) {
           onSuccess={() => loadVehicle(false)}
         />
       )}
+      <SaleDetailsModal
+        saleId={saleModal ? (sale?._id ?? null) : null}
+        openAddForm={saleModal?.add}
+        onClose={() => setSaleModal(null)}
+        onChanged={() => loadVehicle(false)}
+      />
     </div>
   );
 }

@@ -207,7 +207,7 @@ export default function EditVehiclePage({ params }: Props) {
             return;
         }
 
-        if (!form.purchasePrice.trim()) {
+        if (!form?.purchasePrice) {
             setError("Purchase price is required.");
             return;
         }

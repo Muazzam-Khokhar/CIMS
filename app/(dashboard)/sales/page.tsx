@@ -748,32 +748,33 @@ export default function SalesPage() {
                       {salePayments.length !== 1 ? "s" : ""}
                     </p>
                   </div>
+                  <div className="flex items-center justify-center gap-3">
+                    {!isReturned && selectedSale.remaining > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (showPaymentForm) {
+                            resetPaymentForm();
+                          } else {
+                            setShowPaymentForm(true);
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                      >
+                        <Plus className="h-4 w-4" />
 
-                  {!isReturned && selectedSale.remaining > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (showPaymentForm) {
-                          resetPaymentForm();
-                        } else {
-                          setShowPaymentForm(true);
-                        }
-                      }}
-                      className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-                    >
-                      <Plus className="h-4 w-4" />
-
-                      {showPaymentForm ? "Close Payment Form" : "Add Payment"}
-                    </button>
-                  )}
-                  {!isReturned && selectedSale.totalPaid > 0 && (
-                    <Link
-                      href={`/payments?returnSale=${selectedSale._id}`}
-                      className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
-                    >
-                      Return payment
-                    </Link>
-                  )}
+                        {showPaymentForm ? "Close Payment Form" : "Add Payment"}
+                      </button>
+                    )}
+                    {!isReturned && selectedSale.totalPaid > 0 && (
+                      <Link
+                        href={`/payments?returnSale=${selectedSale._id}`}
+                        className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                      >
+                        Return payment
+                      </Link>
+                    )}
+                  </div>
                 </div>
 
                 {/* Add / Edit Payment Form */}

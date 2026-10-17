@@ -168,7 +168,7 @@ export function AddVehicleModal({
   useEffect(() => {
     if (!open) {
       previewsRef.current.forEach((url) => URL.revokeObjectURL(url));
-
+      
       setForm(emptyForm);
       setErrors({});
       setServerError("");

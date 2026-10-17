@@ -150,7 +150,7 @@ export async function getReports(query: ReportQuery) {
     let received = 0;
     let refundedPayments = 0;
     const methodNet = new Map<string, number>();
-
+    
     for (const row of paymentRows) {
       const isRefund = row._id.type === "REFUND";
       const amount = Number(row.total || 0);
@@ -165,7 +165,7 @@ export async function getReports(query: ReportQuery) {
     }
 
     const returnsRefunded = Number(returned[0]?.total || 0);
-    const refunded = refundedPayments + returnsRefunded;
+    const refunded = refundedPayments;
 
     /* ------------------------------- shop expenses ------------------------------- */
     const groups = new Map<string, { title: string; total: number; count: number }>();

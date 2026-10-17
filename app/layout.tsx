@@ -6,6 +6,7 @@ import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
 import "./globals.css";
+// import { LanguageProvider } from "@/components/language-provider";
 
 export const metadata: Metadata = {
   title: "CIMS",
@@ -20,6 +21,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
+        {/* <LanguageProvider></LanguageProvider> */}
         <ConfirmProvider>{children}</ConfirmProvider>
 
         <Toaster position="top-right" richColors closeButton />

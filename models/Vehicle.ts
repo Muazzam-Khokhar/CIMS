@@ -45,7 +45,6 @@ const vehicleSchema = new Schema<IVehicle>(
     chassisNumber: {
       type: String,
       trim: true,
-      unique: true,
     },
     engineNumber: {
       type: String,

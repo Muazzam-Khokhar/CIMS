@@ -411,22 +411,34 @@ export async function updateVehicle(
       NextResponse.json({ success: false, message }, { status: 400 });
     
     const updates: Record<string, unknown> = {};
-    
 
-    for (const [field, label] of [
-      ["name", "Vehicle name"],
-      ["purchaseDate", "Vehicle purchase date"],
-      ["purchasePrice", "Vehicle purchase price"],
-    ] as const) {
-      const value = data[field];
-    
-      if (value === undefined) continue;
-    
-      if (typeof value !== "string" || !value.trim()) {
-        return badRequest(`${label} is required`);
-      }
-    
-      updates[field] = value.trim();
+    if (data.name !== undefined) {
+        if (typeof data.name !== "string" || !data.name.trim()) {
+            return badRequest("Vehicle name is required");
+        }
+
+        updates.name = data.name.trim();
+    }
+
+    if (data.purchasePrice !== undefined) {
+        if (!isValidNonNegativeNumber(data.purchasePrice)) {
+            return badRequest(
+                "Purchase price must be a valid non-negative number"
+            );
+        }
+
+        updates.purchasePrice = data.purchasePrice;
+    }
+
+    if (data.purchaseDate !== undefined) {
+        if (
+            typeof data.purchaseDate !== "string" ||
+            !isValidDate(data.purchaseDate)
+        ) {
+            return badRequest("Invalid purchase date");
+        }
+
+        updates.purchaseDate = data.purchaseDate;
     }
     
 
@@ -457,22 +469,6 @@ export async function updateVehicle(
       } else {
         updates.mileage = data.mileage;
       }
-    }
-    
-    if (data.purchasePrice !== undefined) {
-      if (!isValidNonNegativeNumber(data.purchasePrice)) {
-        return badRequest("Purchase price must be a valid non-negative number");
-      }
-    
-      updates.purchasePrice = data.purchasePrice;
-    }
-    
-    if (data.purchaseDate !== undefined) {
-      if (typeof data.purchaseDate !== "string" || !isValidDate(data.purchaseDate)) {
-        return badRequest("Invalid purchase date");
-      }
-    
-      updates.purchaseDate = data.purchaseDate;
     }
     
     if (data.images !== undefined) {

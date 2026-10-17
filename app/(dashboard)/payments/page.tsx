@@ -14,7 +14,7 @@ import {
 import { toast } from "sonner";
 import { formatDate, formatMoney } from "@/lib/format";
 
-type Vehicle = { name: string; model: string; year?: number; chassisNumber: string };
+type Vehicle = { name: string; model?: string; year?: number; chassisNumber: string };
 
 type Payment = {
   _id: string;
@@ -23,12 +23,14 @@ type Payment = {
     vehicleId: Vehicle;
     saleType: "CUSTOMER" | "AUCTION";
     salePrice: number;
+    status?: "ACTIVE" | "RETURNED";
   } | null;
   type?: "RECEIVED" | "REFUND";
   amount: number;
   paymentDate: string;
   paymentMethod: "CASH" | "BANK" | "ONLINE" | "OTHER";
   notes?: string;
+  saleNet?: number;
 };
 
 type SaleOption = {
@@ -232,7 +234,7 @@ export default function PaymentsPage() {
     }
   }
 
-  const carName = (v?: Vehicle) => (v ? `${v.name} ${v.model}`.trim() : "—");
+  const carName = (v?: Vehicle) => (v ? `${v.name} ${v?.model || ""}`.trim() : "—");
 
   return (
     <div className="space-y-6">
@@ -394,7 +396,10 @@ export default function PaymentsPage() {
                       </td>
 
                       <td className="px-5 py-4 text-right">
-                        {!refund && p.saleId && (
+                      {!refund &&
+                        p.saleId &&
+                        p.saleId.status !== "RETURNED" &&
+                        (p.saleNet ?? 0) > 0.005 && (
                           <button
                             type="button"
                             onClick={() => void openRefund(p.saleId!._id)}

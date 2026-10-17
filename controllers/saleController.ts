@@ -504,6 +504,31 @@ export async function returnSale(
       sale.refundAmount = data.refundAmount;
       sale.returnReason = data.reason?.trim() || undefined;
       await sale.save({ session });
+      if (data.refundAmount > 0) {
+        const [refundPayment] = await Payment.create(
+          [
+            {
+              saleId: sale._id,
+              type: "REFUND",
+              amount: data.refundAmount,
+              paymentDate: returnDate,
+              paymentMethod: (data as any).paymentMethod ?? "CASH",
+              notes: data.reason?.trim() || "Sale returned",
+            },
+          ],
+          { session },
+        );
+      
+        await createAuditLog({
+          actor,
+          action: "PAYMENT_CREATE",
+          entity: "PAYMENT",
+          entityId: refundPayment._id.toString(),
+          description: `¥. ${data.refundAmount} returned to customer (sale returned)`,
+          after: { saleId: saleId, type: "REFUND", amount: data.refundAmount },
+          session,
+        });
+      }
 
       vehicle.status = "AVAILABLE";
       await vehicle.save({ session });

@@ -63,7 +63,7 @@ export async function PUT(
       );
     }
     const data = await request.json();
-
+    console.log(data,"dattttaaaa");
     return updateVehicle(id, data,auth);
   } catch {
     return Response.json(

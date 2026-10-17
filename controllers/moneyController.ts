@@ -33,7 +33,6 @@ export async function computeMoneyOverview() {
 
   const [
     paymentsNet,
-    saleReturnRefunds,
     vehiclesBought,
     vehicleExpenses,
     generalExpenses,
@@ -45,7 +44,6 @@ export async function computeMoneyOverview() {
     settledRows,
   ] = await Promise.all([
     netPayments(),
-    total(Sale, { status: "RETURNED" }, "refundAmount"),
     total(Vehicle, {}, "purchasePrice"),
     total(VehicleExpense),
     total(GeneralExpense),
@@ -143,7 +141,7 @@ export async function computeMoneyOverview() {
 
   /* Money in / out */
   const moneyIn = {
-    fromCustomers: paymentsNet - saleReturnRefunds, // received minus all returns
+    fromCustomers: paymentsNet, // received minus all returns
     partnersPutIn: t("PARTNER_CONTRIBUTION"),
     borrowed: t("LOAN_RECEIVED"),
     lentBackByPartners: t("PARTNER_ADVANCE_REPAID"),

@@ -36,11 +36,8 @@ export async function getDashboard() {
       sales,
       netPaid,
       monthPayments,
-      monthReturns,
       paymentsByMonth,
-      returnsByMonth,
       recentPayments,
-      recentReturns,
       money,
     ] = await Promise.all([
       Vehicle.find({ status: "AVAILABLE" })
@@ -62,27 +59,12 @@ export async function getDashboard() {
         { $group: { _id: "$type", total: { $sum: "$amount" } } },
       ]),
 
-      Sale.aggregate([
-        { $match: { status: "RETURNED", returnDate: { $gte: monthStart } } },
-        { $group: { _id: null, total: { $sum: "$refundAmount" } } },
-      ]),
-
       Payment.aggregate([
         { $match: { paymentDate: { $gte: chartStart } } },
         {
           $group: {
             _id: { $dateToString: { format: "%Y-%m", date: "$paymentDate" } },
             total: { $sum: SIGNED_AMOUNT },
-          },
-        },
-      ]),
-
-      Sale.aggregate([
-        { $match: { status: "RETURNED", returnDate: { $gte: chartStart } } },
-        {
-          $group: {
-            _id: { $dateToString: { format: "%Y-%m", date: "$returnDate" } },
-            total: { $sum: "$refundAmount" },
           },
         },
       ]),
@@ -96,13 +78,6 @@ export async function getDashboard() {
         })
         .sort({ paymentDate: -1, createdAt: -1 })
         .limit(6)
-        .lean(),
-
-      Sale.find({ status: "RETURNED" })
-        .select("vehicleId refundAmount returnDate")
-        .populate("vehicleId", "name model")
-        .sort({ returnDate: -1 })
-        .limit(3)
         .lean(),
 
       computeMoneyOverview().catch(() => null),
@@ -175,8 +150,7 @@ export async function getDashboard() {
     );
 
     let received = 0;
-    let refunded = Number(monthReturns[0]?.total || 0);
-
+    let refunded = 0;
     for (const row of monthPayments) {
       if (row._id === "REFUND") refunded += row.total;
       else received += row.total;
@@ -190,12 +164,11 @@ export async function getDashboard() {
     }
 
     const paidMonth = new Map(paymentsByMonth.map((r: any) => [r._id, r.total as number]));
-    const returnedMonth = new Map(returnsByMonth.map((r: any) => [r._id, r.total as number]));
 
     const chart = months.map(({ key, label }) => ({
       label,
       sales: salesByMonth.get(key) || 0,
-      received: (paidMonth.get(key) || 0) - (returnedMonth.get(key) || 0),
+      received: paidMonth.get(key) || 0,
     }));
 
     /* ----------------------------- loans due ----------------------------- */
@@ -253,21 +226,7 @@ export async function getDashboard() {
         title: nameOf(s.vehicleId),
         amount: Number(s.salePrice),
         date: s.saleDate,
-      })),
-      ...(recentPayments as any[]).map((p) => ({
-        id: `p-${p._id}`,
-        kind: (p.type === "REFUND" ? "refund" : "payment") as Item["kind"],
-        title: nameOf(p.saleId?.vehicleId),
-        amount: Number(p.amount),
-        date: p.paymentDate,
-      })),
-      ...(recentReturns as any[]).map((r) => ({
-        id: `r-${r._id}`,
-        kind: "return" as const,
-        title: nameOf(r.vehicleId),
-        amount: Number(r.refundAmount || 0),
-        date: r.returnDate,
-      })),
+      }))
     ]
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 8);
